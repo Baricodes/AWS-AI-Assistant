@@ -25,5 +25,5 @@ variable "collection_name" {
 variable "gen_inference_profile_id" {
   description = "Bedrock inference profile ID or ARN to use for generation. If not provided, will fall back to GEN_MODEL_ID. Example: us.anthropic.claude-3-5-sonnet-20241022-v2:0"
   type        = string
-  default     = ""
+  default     = "MODEL_PROFILE_ID_HERE"
 }
