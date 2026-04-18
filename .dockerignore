@@ -68,10 +68,10 @@ coverage.xml
 .ipynb_checkpoints
 
 # Terraform
-infra/terraform/.terraform/
-infra/terraform/terraform.tfstate*
-infra/terraform/.terraform.lock.hcl
-infra/terraform/tfplan
+terraform/.terraform/
+terraform/terraform.tfstate*
+terraform/.terraform.lock.hcl
+terraform/tfplan
 
 # Logs
 *.log

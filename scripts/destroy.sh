@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # AWS AI Assistant Infrastructure Destroy Script
-# This script safely destroys all Terraform infrastructure after cleaning up ECR repositories and S3 buckets
+# This script safely destroys all Terraform infrastructure after emptying S3 buckets
 
 set -e
 
@@ -18,10 +18,10 @@ AWS_REGION="us-east-1"
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Get the project root (assuming script is in infra/scripts/)
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TERRAFORM_DIR="$PROJECT_ROOT/infra/terraform"
-SCRIPTS_DIR="$PROJECT_ROOT/infra/scripts"
+# Get the project root (assuming script is in scripts/)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+TERRAFORM_DIR="$PROJECT_ROOT/terraform"
+SCRIPTS_DIR="$PROJECT_ROOT/scripts"
 
 # Global variables
 DRY_RUN=false
@@ -64,9 +64,8 @@ show_usage() {
     echo "  --help       Show this help message"
     echo
     echo "This script will:"
-    echo "  1. Empty all ECR repositories"
-    echo "  2. Empty all S3 buckets"
-    echo "  3. Destroy all Terraform-managed infrastructure"
+    echo "  1. Empty all S3 buckets"
+    echo "  2. Destroy all Terraform-managed infrastructure"
     echo
 }
 
@@ -175,84 +174,16 @@ get_terraform_outputs() {
         return 1
     fi
     
-    # Get ECR repository URL
-    ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url 2>/dev/null || echo "")
-    
     # Get S3 bucket name
     S3_BUCKET_NAME=$(terraform output -raw s3_bucket_name 2>/dev/null || echo "")
     
     cd - > /dev/null
-    
-    if [ -n "$ECR_REPOSITORY_URL" ]; then
-        print_status "Found ECR Repository: $ECR_REPOSITORY_URL"
-    fi
     
     if [ -n "$S3_BUCKET_NAME" ]; then
         print_status "Found S3 Bucket: $S3_BUCKET_NAME"
     fi
     
     return 0
-}
-
-# Empty ECR repository
-empty_ecr_repository() {
-    if [ -z "$ECR_REPOSITORY_URL" ]; then
-        print_warning "No ECR repository URL found, skipping ECR cleanup"
-        return 0
-    fi
-    
-    local repo_name
-    repo_name=$(echo "$ECR_REPOSITORY_URL" | cut -d'/' -f2)
-    
-    print_destroy "Emptying ECR repository: $repo_name"
-    
-    if [ "$DRY_RUN" = true ]; then
-        print_status "[DRY RUN] Would delete all images from ECR repository: $repo_name"
-        return 0
-    fi
-    
-    # Check if repository exists
-    if ! aws ecr describe-repositories --repository-names "$repo_name" --region "$AWS_REGION" > /dev/null 2>&1; then
-        print_warning "ECR repository $repo_name not found, skipping cleanup"
-        return 0
-    fi
-    
-    # Get all images in the repository
-    local images
-    images=$(aws ecr list-images --repository-name "$repo_name" --region "$AWS_REGION" --output json)
-    
-    # Check if there are any images
-    local image_count
-    image_count=$(echo "$images" | jq '.imageIds | length')
-    
-    if [ "$image_count" -eq 0 ]; then
-        print_status "ECR repository is already empty"
-        return 0
-    fi
-    
-    print_status "Found $image_count images to delete"
-    
-    # Delete all images
-    echo "$images" | jq -c '.imageIds[]' | while read -r image; do
-        local image_tag
-        local image_digest
-        image_tag=$(echo "$image" | jq -r '.imageTag // "null"')
-        image_digest=$(echo "$image" | jq -r '.imageDigest // "null"')
-        
-        if [ "$image_tag" != "null" ]; then
-            print_status "Deleting image with tag: $image_tag"
-        elif [ "$image_digest" != "null" ]; then
-            print_status "Deleting image with digest: ${image_digest:0:20}..."
-        fi
-    done
-    
-    # Batch delete all images
-    aws ecr batch-delete-image \
-        --repository-name "$repo_name" \
-        --region "$AWS_REGION" \
-        --image-ids "$(echo "$images" | jq -c '.imageIds')" > /dev/null
-    
-    print_success "ECR repository emptied successfully"
 }
 
 # Empty S3 bucket
@@ -342,7 +273,6 @@ get_confirmation() {
     echo
     print_warning "This will permanently destroy all AWS infrastructure managed by Terraform!"
     print_warning "This includes:"
-    echo "  • ECR repositories and all Docker images"
     echo "  • S3 buckets and all stored documents"
     echo "  • Lambda functions"
     echo "  • API Gateway"
@@ -380,7 +310,6 @@ display_summary() {
     fi
     
     echo "=================="
-    [ -n "$ECR_REPOSITORY_URL" ] && echo "• ECR Repository: $ECR_REPOSITORY_URL"
     [ -n "$S3_BUCKET_NAME" ] && echo "• S3 Bucket: $S3_BUCKET_NAME"
     echo "• All Lambda functions"
     echo "• API Gateway"
@@ -427,7 +356,6 @@ main() {
     fi
     
     # Perform the destruction sequence
-    empty_ecr_repository
     empty_s3_bucket
     destroy_terraform
     

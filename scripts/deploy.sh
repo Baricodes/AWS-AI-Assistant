@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# AWS AI Assistant Lambda Container Deployment Script
-# This script deploys the Terraform infrastructure and builds/pushes Lambda container images
+# AWS AI Assistant deployment script
+# Builds Python Lambda zip packages (Linux/x86_64) and applies Terraform
 
 set -e
 
@@ -14,14 +14,12 @@ NC='\033[0m' # No Color
 
 # Configuration
 AWS_REGION="us-east-1"
-TERRAFORM_DIR="../terraform"
-SCRIPTS_DIR="infra/scripts"
-DOCKER_DIR="../../src/docker"
 GEN_INFERENCE_PROFILE_ID_ENV_DEFAULT="${GEN_INFERENCE_PROFILE_ID:-}"
 
-# Resolve repo root for writing frontend config
+# Resolve repo root and Terraform directory (works regardless of current working directory)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+TERRAFORM_DIR="$REPO_ROOT/terraform"
 
 write_frontend_config() {
     local api_url="$1"
@@ -104,19 +102,16 @@ get_aws_account_id() {
     print_success "AWS Account ID: $AWS_ACCOUNT_ID"
 }
 
-# Deploy ECR and basic infrastructure first
+# Deploy core infrastructure first (no Lambda functions yet; zips are built before full apply)
 deploy_infrastructure_stage1() {
-    print_status "Deploying stage 1 infrastructure (ECR, OpenSearch, etc.)..."
+    print_status "Deploying stage 1 infrastructure (OpenSearch, S3, IAM, etc.)..."
     
-    local terraform_path
-    terraform_path="$(pwd)/$TERRAFORM_DIR"
-    
-    if [ ! -d "$terraform_path" ]; then
-        print_error "Terraform directory not found: $terraform_path"
+    if [ ! -d "$TERRAFORM_DIR" ]; then
+        print_error "Terraform directory not found: $TERRAFORM_DIR"
         exit 1
     fi
     
-    cd "$terraform_path"
+    cd "$TERRAFORM_DIR"
     
     # Initialize Terraform if needed
     if [ ! -d ".terraform" ]; then
@@ -125,9 +120,8 @@ deploy_infrastructure_stage1() {
     fi
     
     # Target specific resources that Lambda doesn't depend on
-    print_status "Creating ECR repository and basic infrastructure..."
-    terraform apply -target=aws_ecr_repository.lambda_images \
-                    -target=aws_dynamodb_table.knowledge_base \
+    print_status "Creating core infrastructure (S3, OpenSearch, IAM, etc.)..."
+    terraform apply -target=aws_dynamodb_table.knowledge_base \
                     -target=aws_s3_bucket.knowledge_assistant_docs \
                     -target=aws_s3_bucket_public_access_block.knowledge_assistant_docs \
                     -target=aws_s3_object.ingest_folder \
@@ -144,10 +138,6 @@ deploy_infrastructure_stage1() {
                     -target=aws_iam_role_policy_attachment.query_processor_policy \
                     -auto-approve
     
-    # Get ECR URL for image push
-    ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)
-    print_success "ECR Repository created: $ECR_REPOSITORY_URL"
-    
     cd - > /dev/null
 }
 
@@ -155,10 +145,7 @@ deploy_infrastructure_stage1() {
 deploy_terraform() {
     print_status "Deploying remaining Terraform infrastructure..."
     
-    local terraform_path
-    terraform_path="$(pwd)/$TERRAFORM_DIR"
-    
-    cd "$terraform_path"
+    cd "$TERRAFORM_DIR"
     
     # Apply all resources
     print_status "Applying Terraform..."
@@ -173,7 +160,6 @@ deploy_terraform() {
     
     # Get outputs
     print_status "Getting Terraform outputs..."
-    ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)
     OPENSEARCH_ENDPOINT=$(terraform output -raw opensearch_collection_endpoint)
     API_GATEWAY_URL=$(terraform output -raw api_gateway_query_endpoint)
     # Also try canonical output if present (no fail if missing)
@@ -184,7 +170,6 @@ deploy_terraform() {
     fi
     
     print_success "Terraform deployment completed"
-    print_status "ECR Repository URL: $ECR_REPOSITORY_URL"
     print_status "OpenSearch Endpoint: $OPENSEARCH_ENDPOINT"
     print_status "API Gateway URL: $API_GATEWAY_URL"
     # Generate frontend config
@@ -193,81 +178,61 @@ deploy_terraform() {
     cd - > /dev/null
 }
 
-# Login to ECR
-login_to_ecr() {
-    if [ -z "$ECR_REPOSITORY_URL" ]; then
-        print_error "ECR_REPOSITORY_URL is not set"
+# Build a single Lambda deployment package (Linux x86_64, matches default Lambda arch)
+build_lambda_zip_package() {
+    local module_name="$1"
+    local packages_dir="$REPO_ROOT/terraform/lambda_packages"
+    local work
+    work=$(mktemp -d)
+
+    print_status "Building Lambda zip: ${module_name}..."
+
+    cp "$REPO_ROOT/requirements.txt" "$work/"
+    cp "$REPO_ROOT/terraform/lambda/${module_name}.py" "$work/"
+
+    if ! docker run --rm --platform linux/amd64 \
+        -v "$work:/var/task" \
+        public.ecr.aws/lambda/python:3.11 \
+        bash -c "cd /var/task && pip install -r requirements.txt -t . -q"; then
+        rm -rf "$work"
+        print_error "pip install failed for ${module_name}"
         exit 1
     fi
-    
-    print_status "Logging in to ECR..."
-    aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URL
-    print_success "Successfully logged in to ECR"
+
+    find "$work" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+    find "$work" -name "*.pyc" -delete 2>/dev/null || true
+
+    mkdir -p "$packages_dir"
+    (cd "$work" && zip -r9 "$packages_dir/${module_name}.zip" .)
+    rm -rf "$work"
+    print_success "Built ${packages_dir}/${module_name}.zip"
 }
 
-# Build and push doc_ingestor image
-build_and_push_doc_ingestor() {
-    print_status "Building doc_ingestor Docker image..."
-    
-    # Get to project root
-    cd "$(dirname "$(dirname "$(pwd)")")"
-    
-    # Build the image from project root
-    docker build -f "src/docker/Dockerfile.doc_ingestor" \
-        --build-arg BUILDKIT_INLINE_CACHE=1 \
-        --provenance=false \
-        -t doc_ingestor:latest .
-    
-    # Tag for ECR
-    docker tag doc_ingestor:latest $ECR_REPOSITORY_URL:doc_ingestor-latest
-    
-    # Push to ECR
-    print_status "Pushing doc_ingestor image to ECR..."
-    docker push $ECR_REPOSITORY_URL:doc_ingestor-latest
-    
-    print_success "doc_ingestor image built and pushed successfully"
-    
-    # Return to original directory
-    cd - > /dev/null
+# Build both Lambda zip packages under terraform/lambda_packages/
+build_lambda_zips() {
+    build_lambda_zip_package "doc_ingestor"
+    build_lambda_zip_package "query_processor"
 }
 
-# Build and push query_processor image
-build_and_push_query_processor() {
-    print_status "Building query_processor Docker image..."
-    
-    # Get to project root
-    cd "$(dirname "$(dirname "$(pwd)")")"
-    
-    # Build the image from project root
-    docker build -f "src/docker/Dockerfile.query_processor" \
-        --build-arg BUILDKIT_INLINE_CACHE=1 \
-        --provenance=false \
-        -t query_processor:latest .
-    
-    # Tag for ECR
-    docker tag query_processor:latest $ECR_REPOSITORY_URL:query_processor-latest
-    
-    # Push to ECR
-    print_status "Pushing query_processor image to ECR..."
-    docker push $ECR_REPOSITORY_URL:query_processor-latest
-    
-    print_success "query_processor image built and pushed successfully"
-    
-    # Return to original directory
-    cd - > /dev/null
-}
-
-# Update Lambda functions
+# Update Lambda functions with freshly built zips
 update_lambda_functions() {
-    print_status "Updating Lambda functions with new images..."
-    
-    # Update doc_ingestor
+    print_status "Updating Lambda functions with new deployment packages..."
+
+    local doc_zip="$REPO_ROOT/terraform/lambda_packages/doc_ingestor.zip"
+    local qry_zip="$REPO_ROOT/terraform/lambda_packages/query_processor.zip"
+
+    if [ ! -f "$doc_zip" ] || [ ! -f "$qry_zip" ]; then
+        print_error "Zip packages not found. Run build step first."
+        exit 1
+    fi
+
+    local output_file
     print_status "Updating doc_ingestor Lambda function..."
-    local output_file=$(mktemp)
+    output_file=$(mktemp)
     if aws lambda update-function-code \
         --function-name aws-ai-assistant-doc-ingestor \
-        --image-uri $ECR_REPOSITORY_URL:doc_ingestor-latest \
-        --region $AWS_REGION \
+        --zip-file "fileb://${doc_zip}" \
+        --region "$AWS_REGION" \
         --no-cli-pager \
         --output json > "$output_file" 2>&1; then
         print_success "doc_ingestor Lambda function updated successfully"
@@ -279,20 +244,13 @@ update_lambda_functions() {
         rm -f "$output_file"
         exit 1
     fi
-    
-    # Update query_processor
+
     print_status "Updating query_processor Lambda function..."
-    if [ -z "$ECR_REPOSITORY_URL" ]; then
-        print_error "ECR_REPOSITORY_URL is not set. Cannot update query_processor."
-        exit 1
-    fi
-    print_status "Function: aws-ai-assistant-query-processor"
-    print_status "Image URI: $ECR_REPOSITORY_URL:query_processor-latest"
     output_file=$(mktemp)
     if aws lambda update-function-code \
         --function-name aws-ai-assistant-query-processor \
-        --image-uri $ECR_REPOSITORY_URL:query_processor-latest \
-        --region $AWS_REGION \
+        --zip-file "fileb://${qry_zip}" \
+        --region "$AWS_REGION" \
         --no-cli-pager \
         --output json > "$output_file" 2>&1; then
         print_success "query_processor Lambda function updated successfully"
@@ -304,7 +262,7 @@ update_lambda_functions() {
         rm -f "$output_file"
         exit 1
     fi
-    
+
     print_success "All Lambda functions updated successfully"
 }
 
@@ -423,7 +381,6 @@ display_summary() {
     echo
     print_status "Deployment Summary:"
     echo "===================="
-    echo "• ECR Repository: $ECR_REPOSITORY_URL"
     echo "• OpenSearch Endpoint: $OPENSEARCH_ENDPOINT"
     echo "• API Gateway URL: $API_GATEWAY_URL"
     echo
@@ -472,32 +429,22 @@ parse_arguments() {
 # Deploy infrastructure (Terraform + Lambda updates)
 deploy_infrastructure() {
     if [ "$UPDATE_MODE" = false ]; then
-        # Stage 1: Deploy ECR and basic infrastructure
         deploy_infrastructure_stage1
-        
-        # Build and push images before creating Lambda functions
-        login_to_ecr
-        build_and_push_doc_ingestor
-        build_and_push_query_processor
-        
-        # Stage 2: Deploy remaining infrastructure (including Lambda functions)
+        build_lambda_zips
         deploy_terraform
     else
         print_status "Update mode: Skipping Terraform deployment"
         # Get existing outputs from Terraform state
-        cd "$(pwd)/$TERRAFORM_DIR"
+        cd "$TERRAFORM_DIR"
         print_status "Reading existing Terraform outputs..."
-        ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)
         OPENSEARCH_ENDPOINT=$(terraform output -raw opensearch_collection_endpoint)
         API_GATEWAY_URL=$(terraform output -raw api_gateway_query_endpoint)
         if terraform output -raw http_api_ask_endpoint >/dev/null 2>&1; then
             API_GATEWAY_URL=$(terraform output -raw http_api_ask_endpoint)
         fi
-        
-        print_status "ECR Repository URL: $ECR_REPOSITORY_URL"
+
         print_status "OpenSearch Endpoint: $OPENSEARCH_ENDPOINT"
         print_status "API Gateway URL: $API_GATEWAY_URL"
-        # Generate frontend config in update mode as well
         write_frontend_config "$API_GATEWAY_URL"
         cd - > /dev/null
     fi
@@ -505,7 +452,7 @@ deploy_infrastructure() {
 
 # Main execution
 main() {
-    print_status "Starting AWS AI Assistant Lambda Container Deployment"
+    print_status "Starting AWS AI Assistant deployment"
     echo "=============================================================="
     
     parse_arguments "$@"
@@ -520,16 +467,11 @@ main() {
     deploy_infrastructure
     
     if [ "$UPDATE_MODE" = true ]; then
-        # In update mode, we need to build and push images
-        login_to_ecr
-        build_and_push_doc_ingestor
-        build_and_push_query_processor
+        build_lambda_zips
         update_lambda_functions
         wait_for_lambda_functions
     else
-        # In fresh deployment mode, images were already pushed during deploy_infrastructure
-        # Lambda functions were already created with the images
-        print_status "Lambda functions already created with images during deployment"
+        print_status "Lambda functions were deployed with Terraform using the built zip packages"
     fi
     
     if [ "$UPDATE_MODE" = false ]; then

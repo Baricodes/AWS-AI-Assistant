@@ -29,27 +29,30 @@ venv/
 .idea/
 
 # Terraform
+**/.terraform/*
 .terraform/
-.terraform/*
-terraform.tfstate
-terraform.tfstate.*
+.terraformrc
+terraform.rc
+*.tfstate
+*.tfstate.*
 crash.log
 crash.*.log
 override.tf
 override.tf.json
+*_override.tf
+*_override.tf.json
 *.override.tf
 *.override.tf.json
+*.tfvars
 *.tfvars.json
 *.tfvars.backup
-*.tfplan
+*tfplan*
+
+# Lambda deployment bundles (built by deploy.sh)
+terraform/lambda_packages/*.zip
 
 # Docker
 *.tar
 
 # Generated frontend config
 frontend/config/config.js
-
-# Terraform variables with sensitive data
-*.tfvars
-*.tfvars.backup
-

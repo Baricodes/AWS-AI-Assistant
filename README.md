@@ -109,9 +109,8 @@ The system is built using a serverless architecture with containerized Lambda fu
 ### Components
 
 - **S3 Bucket**: Stores documents in `ingest/` folder (triggers processing) and `processed/` folder (completed documents)
-- **ECR Repository**: Stores Docker container images for Lambda functions
-- **doc_ingestor Lambda**: Containerized Lambda function that processes S3 uploads, chunks text, generates embeddings, and indexes to OpenSearch
-- **query_processor Lambda**: Containerized Lambda function that handles user queries, performs vector search, and generates answers
+- **doc_ingestor Lambda**: Zip deployment package (Python 3.11) that processes S3 uploads, chunks text, generates embeddings, and indexes to OpenSearch
+- **query_processor Lambda**: Zip deployment package (Python 3.11) that handles user queries, performs vector search, and generates answers
 - **OpenSearch Serverless**: Vector database for storing and searching document embeddings using kNN search
 - **API Gateway**: HTTP API providing REST endpoint for querying the knowledge base
 - **DynamoDB**: Stores knowledge base metadata and document information
@@ -125,7 +124,7 @@ The system is built using a serverless architecture with containerized Lambda fu
 - 📧 **Vector Search**: Efficient similarity search using OpenSearch Serverless with kNN capabilities
 - 📊 **Source Citations**: Answers include citations to source document chunks
 - 🎯 **Serverless Architecture**: Fully serverless with Lambda, API Gateway, and managed services
-- 🚀 **Container-Based Lambdas**: Lambda functions run as Docker containers for flexibility and larger dependencies
+- 🚀 **Zip-Based Lambdas**: Lambda functions use Python zip bundles; Docker is only used locally to install Linux-compatible dependencies
 - 🔒 **Secure**: Uses IAM roles, OpenSearch Serverless security policies, and VPC endpoints
 
 ## 📦 Prerequisites
@@ -147,7 +146,6 @@ Before you begin, ensure you have the following:
 - Access to the following AWS services:
   - Amazon S3
   - AWS Lambda
-  - Amazon ECR
   - Amazon OpenSearch Serverless
   - Amazon API Gateway
   - Amazon DynamoDB
@@ -228,7 +226,7 @@ python3 --version
 Run the deployment script from the project root:
 
 ```bash
-cd infra/scripts
+cd scripts
 ./deploy.sh
 ```
 
@@ -240,10 +238,11 @@ For initial deployment with a Bedrock inference profile (if using on-demand mode
 
 The deployment script will:
 1. Check prerequisites
-2. Deploy Terraform infrastructure (ECR, S3, OpenSearch, IAM, Lambda, API Gateway)
-3. Build and push Docker container images to ECR
-4. Initialize OpenSearch index
-5. Generate frontend configuration
+2. Deploy stage-1 Terraform (S3, OpenSearch, IAM, etc.)
+3. Build Lambda zip packages (`terraform/lambda_packages/*.zip`) using Docker to install Linux dependencies
+4. Apply full Terraform (Lambda functions, API Gateway, etc.)
+5. Initialize OpenSearch index
+6. Generate frontend configuration
 
 **Note**: Initial deployment takes approximately 10-15 minutes.
 
@@ -251,7 +250,7 @@ The deployment script will:
 
 ### Terraform Variables
 
-Key variables you can configure in `infra/terraform/variables.tf`:
+Key variables you can configure in `terraform/variables.tf`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -298,13 +297,13 @@ The OpenSearch index `kb_chunks` is configured with:
 Run the deployment script from the project root:
 
 ```bash
-cd infra/scripts
+cd scripts
 ./deploy.sh
 ```
 
 This script will:
-1. Deploy foundational infrastructure (ECR, S3, OpenSearch, IAM roles)
-2. Build and push Docker container images to ECR
+1. Deploy foundational infrastructure (S3, OpenSearch, IAM roles)
+2. Build Lambda zip packages under `terraform/lambda_packages/`
 3. Deploy remaining infrastructure (Lambda functions, API Gateway)
 4. Initialize OpenSearch index with proper mappings
 5. Generate frontend configuration file
@@ -314,15 +313,14 @@ This script will:
 To update Lambda functions with new code without redeploying infrastructure:
 
 ```bash
-cd infra/scripts
+cd scripts
 ./deploy.sh --update
 ```
 
 This skips Terraform deployment and only:
-1. Builds new Docker images
-2. Pushes images to ECR
-3. Updates existing Lambda functions
-4. Waits for functions to become active
+1. Rebuilds Lambda zip packages
+2. Updates existing Lambda function code from those zips
+3. Waits for functions to become active
 
 ### Deployment Options
 
@@ -344,33 +342,15 @@ The deployment script supports several options:
 
 ### Manual Deployment (Alternative)
 
-If you prefer to use Terraform directly:
+The deployment script builds `terraform/lambda_packages/*.zip` before applying Terraform; **Docker must be running** for that step so dependencies install for Amazon Linux (`linux/amd64`).
+
+To apply only Terraform after those zips already exist:
 
 ```bash
-cd infra/terraform
+cd terraform
 terraform init
 terraform plan
 terraform apply
-```
-
-Then manually build and push Docker images:
-
-```bash
-# Get ECR repository URL
-ECR_URL=$(terraform output -raw ecr_repository_url)
-
-# Login to ECR
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ECR_URL
-
-# Build and push doc_ingestor
-docker build -f ../../src/docker/Dockerfile.doc_ingestor --provenance=false -t doc_ingestor:latest ../..
-docker tag doc_ingestor:latest $ECR_URL:doc_ingestor-latest
-docker push $ECR_URL:doc_ingestor-latest
-
-# Build and push query_processor
-docker build -f ../../src/docker/Dockerfile.query_processor --provenance=false -t query_processor:latest ../..
-docker tag query_processor:latest $ECR_URL:query_processor-latest
-docker push $ECR_URL:query_processor-latest
 ```
 
 ## 📖 Usage
@@ -381,7 +361,7 @@ Upload documents to the S3 bucket's `ingest/` folder to automatically trigger pr
 
 ```bash
 # Get bucket name from Terraform outputs
-BUCKET_NAME=$(cd infra/terraform && terraform output -raw s3_bucket_name)
+BUCKET_NAME=$(cd terraform && terraform output -raw s3_bucket_name)
 
 # Upload a document
 aws s3 cp your-document.txt s3://$BUCKET_NAME/ingest/your-document.txt
@@ -403,7 +383,7 @@ Query the API using curl:
 
 ```bash
 # Get API endpoint from Terraform outputs
-API_URL=$(cd infra/terraform && terraform output -raw http_api_ask_endpoint)
+API_URL=$(cd terraform && terraform output -raw http_api_ask_endpoint)
 
 # Send a query
 curl -X POST $API_URL \
@@ -453,11 +433,11 @@ aws s3 ls s3://$BUCKET_NAME/processed/
 
 ```bash
 # Get OpenSearch endpoint
-OS_ENDPOINT=$(cd infra/terraform && terraform output -raw opensearch_collection_endpoint)
+OS_ENDPOINT=$(cd terraform && terraform output -raw opensearch_collection_endpoint)
 
 # Use OpenSearch Dashboards (recommended)
 # Access via: https://<dashboard-endpoint>
-DASHBOARD_URL=$(cd infra/terraform && terraform output -raw opensearch_dashboard_url)
+DASHBOARD_URL=$(cd terraform && terraform output -raw opensearch_dashboard_url)
 ```
 
 **CloudWatch Logs**: View Lambda execution logs:
@@ -473,7 +453,7 @@ aws logs tail /aws/lambda/aws-ai-assistant-query-processor --follow --region us-
 **DynamoDB**: Check knowledge base metadata:
 
 ```bash
-TABLE_NAME=$(cd infra/terraform && terraform output -raw dynamodb_table_name)
+TABLE_NAME=$(cd terraform && terraform output -raw dynamodb_table_name)
 aws dynamodb scan --table-name $TABLE_NAME --region us-east-1
 ```
 
@@ -503,31 +483,25 @@ aws dynamodb scan --table-name $TABLE_NAME --region us-east-1
 
 ```
 AWS-AI-Assitant/
-├── infra/
-│   ├── scripts/
-│   │   ├── deploy.sh              # Main deployment script
-│   │   ├── destroy.sh             # Teardown script
-│   │   └── DEPLOYMENT_FLOW.md    # Deployment documentation
-│   └── terraform/
-│       ├── main.tf                # Terraform provider configuration
-│       ├── variables.tf           # Terraform variables
-│       ├── outputs.tf             # Terraform outputs
-│       ├── api_gateway.tf         # API Gateway configuration
-│       ├── dynamodb.tf            # DynamoDB table
-│       ├── ecr.tf                 # ECR repository
-│       ├── iam.tf                 # IAM roles and policies
-│       ├── lambda.tf              # Lambda functions
-│       ├── opensearch.tf          # OpenSearch Serverless
-│       └── s3.tf                  # S3 bucket configuration
-├── src/
-│   ├── config/
-│   │   └── open_search_index.json # OpenSearch index configuration
-│   ├── docker/
-│   │   ├── Dockerfile.doc_ingestor      # doc_ingestor container image
-│   │   └── Dockerfile.query_processor   # query_processor container image
-│   └── python/
-│       ├── doc_ingestor.py        # Document ingestion Lambda handler
-│       └── query_processor.py    # Query processing Lambda handler
+├── scripts/
+│   ├── deploy.sh                  # Main deployment script
+│   └── destroy.sh                 # Teardown script
+├── terraform/
+│   ├── main.tf                    # Terraform provider configuration
+│   ├── variables.tf               # Terraform variables
+│   ├── outputs.tf                 # Terraform outputs
+│   ├── api_gateway.tf             # API Gateway configuration
+│   ├── dynamodb.tf                # DynamoDB table
+│   ├── iam.tf                     # IAM roles and policies
+│   ├── lambda.tf                  # Lambda functions
+│   ├── lambda/                    # Lambda handler source (Python)
+│   │   ├── doc_ingestor.py
+│   │   └── query_processor.py
+│   ├── lambda_packages/           # Built zip bundles (.zip gitignored; created by deploy.sh)
+│   ├── opensearch.tf              # OpenSearch Serverless
+│   └── s3.tf                      # S3 bucket configuration
+├── config/
+│   └── open_search_index.json     # OpenSearch index configuration
 ├── frontend/
 │   ├── config/
 │   │   └── config.js              # Frontend API configuration (auto-generated)
@@ -546,17 +520,14 @@ AWS-AI-Assitant/
 
 ### Deployment Issues
 
-**Issue**: Terraform fails with "ECR repository not found"
-- **Solution**: The deployment script deploys infrastructure in stages. Ensure Stage 1 completes before Stage 2. Re-run `./deploy.sh` if it fails mid-deployment.
+**Issue**: Terraform fails because `lambda_packages/*.zip` is missing
+- **Solution**: Run `./deploy.sh` from `scripts` so it builds the zips before `terraform apply`. Docker must be running for the pip install step.
 
-**Issue**: Docker build fails with "provenance" error
-- **Solution**: Ensure you're using `--provenance=false` flag when building Docker images for Lambda (this is handled automatically by the deploy script).
+**Issue**: Lambda fails at runtime with `No module named ...`
+- **Solution**: Rebuild zips on a machine with Docker available (`./deploy.sh --update`) so dependencies are installed for Amazon Linux, not your local OS.
 
 **Issue**: Lambda function update fails
-- **Solution**: Ensure the ECR repository URL is correct and the image was successfully pushed. Check ECR with:
-  ```bash
-  aws ecr describe-images --repository-name <repo-name> --region us-east-1
-  ```
+- **Solution**: Confirm `aws lambda update-function-code` completed and check CloudWatch Logs for import errors. Verify the zip was built with the same runtime/architecture as Lambda (the deploy script targets `linux/amd64` to match default Lambda architecture).
 
 ### Runtime Issues
 
@@ -597,7 +568,7 @@ AWS-AI-Assitant/
 **Re-initialize Index**:
 The deployment script automatically creates the index. To manually recreate:
 ```bash
-cd infra/scripts
+cd scripts
 # The initialize_opensearch_index function in deploy.sh can be run separately
 ```
 
@@ -621,14 +592,13 @@ aws bedrock list-foundation-models --region us-east-1 --query 'modelSummaries[?c
 - **API Gateway**: HTTP API uses IAM authentication and CORS configuration (configurable via environment variables)
 - **S3 Bucket**: S3 bucket has public access blocked and uses IAM-based access control
 - **Secrets Management**: No hardcoded credentials; all authentication uses IAM roles and AWS credentials
-- **Container Images**: Docker images are stored in private ECR repositories
+- **Deployment packages**: Lambda code is uploaded as zip bundles; build locally with Docker for Linux-compatible wheels
 - **Network Security**: OpenSearch Serverless uses VPC endpoints and network policies for secure access
 
 ### IAM Permissions Required
 
 The deployment requires IAM permissions to create and manage:
 - Lambda functions and their execution roles
-- ECR repositories
 - S3 buckets and objects
 - OpenSearch Serverless collections, security policies, and access policies
 - API Gateway HTTP APIs
