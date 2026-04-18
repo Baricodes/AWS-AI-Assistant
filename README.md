@@ -124,7 +124,7 @@ The system is built using a serverless architecture with containerized Lambda fu
 - 📧 **Vector Search**: Efficient similarity search using OpenSearch Serverless with kNN capabilities
 - 📊 **Source Citations**: Answers include citations to source document chunks
 - 🎯 **Serverless Architecture**: Fully serverless with Lambda, API Gateway, and managed services
-- 🚀 **Zip-Based Lambdas**: Lambda functions use Python zip bundles; Docker is only used locally to install Linux-compatible dependencies
+- 🚀 **Terraform-Built Lambdas**: Each handler is zipped with the `archive_file` data source into `terraform/.build/`; a shared Lambda layer carries OpenSearch client libraries (installed via `pip` when Terraform plans)
 - 🔒 **Secure**: Uses IAM roles, OpenSearch Serverless security policies, and VPC endpoints
 
 ## 📦 Prerequisites
@@ -134,9 +134,8 @@ Before you begin, ensure you have the following:
 ### Required Tools
 
 - **AWS CLI** (v2.x) - [Installation Guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
-- **Docker** (latest) - [Installation Guide](https://docs.docker.com/get-docker/)
 - **Terraform** (>= 1.0) - [Installation Guide](https://developer.hashicorp.com/terraform/downloads)
-- **Python 3** (3.9+) - [Installation Guide](https://www.python.org/downloads/)
+- **Python 3** (3.9+) with **pip** - [Installation Guide](https://www.python.org/downloads/) (used when Terraform runs `plan`/`apply` to materialize the dependency layer)
 
 ### AWS Account Requirements
 
@@ -206,9 +205,9 @@ Verify all required tools are installed:
 
 ```bash
 aws --version
-docker --version
 terraform version
 python3 --version
+python3 -m pip --version
 ```
 
 ### 4. Enable Bedrock Model Access
@@ -221,29 +220,21 @@ python3 --version
 
 ### 5. Deploy Infrastructure
 
-From the **repository root**, build Lambda zip bundles (Docker installs Amazon Linux–compatible dependencies), then apply Terraform:
+Lambda deployment packages are produced by Terraform:
+
+- Each function’s code is a **single** `*.py` file, archived with the **`archive_file`** data source into `terraform/.build/<name>.zip`. Changing the handler changes the hash and updates the function on apply.
+- Third-party imports (`opensearch-py`, `requests-aws4auth`) are packaged in a **shared Lambda layer**; `terraform plan` / `apply` runs a small helper that `pip install`s them into `terraform/lambda/.layer_content/` (Linux-compatible wheels when possible) and zips that tree with `archive_file` as `terraform/.build/lambda_deps_layer.zip`.
+
+From the **`terraform/`** directory:
 
 ```bash
-REPO_ROOT=$(pwd)
-mkdir -p .build
-for name in doc_ingestor query_processor; do
-  work=$(mktemp -d)
-  cp requirements.txt "$work/"
-  cp "terraform/lambda/${name}.py" "$work/"
-  docker run --rm --platform linux/amd64 -v "$work:/var/task" public.ecr.aws/lambda/python:3.11 \
-    bash -c "cd /var/task && pip install -r requirements.txt -t . -q"
-  find "$work" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-  (cd "$work" && zip -r9 "$REPO_ROOT/.build/${name}.zip" .)
-  rm -rf "$work"
-done
-
-cd terraform
 terraform init
 terraform apply
 # If you use a Bedrock inference profile for generation, pass:
 # terraform apply -var='gen_inference_profile_id=<PROFILE_ID_OR_ARN>'
-cd ..
 ```
+
+**Requirements**: Network access for `terraform init` (providers) and for `pip` on the machine running Terraform when the layer is installed or when `terraform/lambda/layer_requirements.txt` changes.
 
 Write the frontend API URL (after apply):
 
@@ -307,24 +298,19 @@ The OpenSearch index `kb_chunks` is configured with:
 
 ### Initial deployment
 
-Follow **Deploy Infrastructure** (build `.build/*.zip`, run `terraform apply`, write `frontend/config/config.js`).
+Follow **Deploy Infrastructure** (run `terraform apply` from `terraform/`, write `frontend/config/config.js`).
 
 ### Update Lambda code only
 
-Rebuild the zips (same Docker loop as in **Deploy Infrastructure**), then from the repository root:
+Edit `terraform/lambda/doc_ingestor.py` or `terraform/lambda/query_processor.py`, then from **`terraform/`**:
 
 ```bash
-aws lambda update-function-code --function-name aws-ai-assistant-doc-ingestor \
-  --zip-file fileb://.build/doc_ingestor.zip --region us-east-1 --no-cli-pager
-aws lambda update-function-code --function-name aws-ai-assistant-query-processor \
-  --zip-file fileb://.build/query_processor.zip --region us-east-1 --no-cli-pager
-aws lambda wait function-active --function-name aws-ai-assistant-doc-ingestor --region us-east-1
-aws lambda wait function-active --function-name aws-ai-assistant-query-processor --region us-east-1
+terraform apply
 ```
 
-### Terraform only (zips already built)
+Terraform rebuilds the `archive_file` zips and updates the functions when the source hash changes.
 
-**Docker must be running** when building zips so dependencies install for Amazon Linux (`linux/amd64`).
+### Terraform only (no code edits)
 
 ```bash
 cd terraform
@@ -459,8 +445,8 @@ aws dynamodb scan --table-name $TABLE_NAME --region us-east-1
 
 ```
 AWS-AI-Assitant/
-├── .build/                        # Built Lambda zips (gitignored)
 ├── terraform/
+│   ├── .build/                    # Lambda zips from archive_file (gitignored)
 │   ├── main.tf                    # Terraform provider configuration
 │   ├── variables.tf               # Terraform variables
 │   ├── outputs.tf                 # Terraform outputs
@@ -468,9 +454,12 @@ AWS-AI-Assitant/
 │   ├── dynamodb.tf                # DynamoDB table
 │   ├── iam.tf                     # IAM roles and policies
 │   ├── lambda.tf                  # Lambda functions
+│   ├── lambda_packages.tf         # archive_file + dependency layer packaging
 │   ├── lambda/                    # Lambda handler source (Python)
 │   │   ├── doc_ingestor.py
-│   │   └── query_processor.py
+│   │   ├── query_processor.py
+│   │   ├── layer_requirements.txt # Layer-only pip deps
+│   │   └── install_layer_deps.py  # pip install for layer (Terraform external data source)
 │   ├── opensearch.tf              # OpenSearch Serverless
 │   └── s3.tf                      # S3 bucket configuration
 ├── config/
@@ -492,14 +481,14 @@ AWS-AI-Assitant/
 
 ### Deployment Issues
 
-**Issue**: Terraform fails because `.build/*.zip` is missing
-- **Solution**: Build the zips with the Docker loop under **Deploy Infrastructure** before `terraform apply`. Docker must be running for the pip install step.
+**Issue**: Terraform / `pip` fails while preparing the Lambda layer
+- **Solution**: Ensure Python 3 and `pip` work on the machine running Terraform, with network access to PyPI. If manylinux wheels cannot be resolved, the helper falls back to a plain `pip install` into the layer directory.
 
 **Issue**: Lambda fails at runtime with `No module named ...`
-- **Solution**: Rebuild zips with Docker (`linux/amd64`) so dependencies match the Lambda runtime, not your local OS.
+- **Solution**: Confirm the Lambda has the `aws-ai-assistant-lambda-deps` layer attached (see `terraform/lambda_packages.tf`). After changing `terraform/lambda/layer_requirements.txt`, run `terraform apply` so the layer is rebuilt and published.
 
 **Issue**: Lambda function update fails
-- **Solution**: Confirm `aws lambda update-function-code` completed and check CloudWatch Logs for import errors. Verify the zip was built for `linux/amd64` to match the Lambda architecture in Terraform.
+- **Solution**: Check CloudWatch Logs for import errors. Confirm `terraform apply` completed without errors for `aws_lambda_layer_version` and `aws_lambda_function`.
 
 ### Runtime Issues
 
@@ -560,7 +549,7 @@ aws bedrock list-foundation-models --region us-east-1 --query 'modelSummaries[?c
 - **API Gateway**: HTTP API uses IAM authentication and CORS configuration (configurable via environment variables)
 - **S3 Bucket**: S3 bucket has public access blocked and uses IAM-based access control
 - **Secrets Management**: No hardcoded credentials; all authentication uses IAM roles and AWS credentials
-- **Deployment packages**: Lambda code is uploaded as zip bundles; build locally with Docker for Linux-compatible wheels
+- **Deployment packages**: Lambda handlers are zipped by Terraform (`archive_file`); shared dependencies ship in a Lambda layer built with `pip` during `terraform plan` / `apply`
 - **Network Security**: OpenSearch Serverless uses VPC endpoints and network policies for secure access
 
 ### IAM Permissions Required

@@ -1,8 +1,9 @@
 resource "aws_lambda_function" "doc_ingestor" {
   function_name    = "aws-ai-assistant-doc-ingestor"
   role             = aws_iam_role.doc_ingestor_role.arn
-  filename         = "${path.module}/../.build/doc_ingestor.zip"
-  source_code_hash = filebase64sha256("${path.module}/../.build/doc_ingestor.zip")
+  filename         = data.archive_file.doc_ingestor_zip.output_path
+  source_code_hash = data.archive_file.doc_ingestor_zip.output_base64sha256
+  layers           = [aws_lambda_layer_version.lambda_deps.arn]
   handler          = "doc_ingestor.handler"
   runtime          = "python3.11"
   architectures    = ["x86_64"]
@@ -33,8 +34,9 @@ resource "aws_lambda_function" "doc_ingestor" {
 resource "aws_lambda_function" "query_processor" {
   function_name    = "aws-ai-assistant-query-processor"
   role             = aws_iam_role.query_processor_role.arn
-  filename         = "${path.module}/../.build/query_processor.zip"
-  source_code_hash = filebase64sha256("${path.module}/../.build/query_processor.zip")
+  filename         = data.archive_file.query_processor_zip.output_path
+  source_code_hash = data.archive_file.query_processor_zip.output_base64sha256
+  layers           = [aws_lambda_layer_version.lambda_deps.arn]
   handler          = "query_processor.handler"
   runtime          = "python3.11"
   architectures    = ["x86_64"]
