@@ -1,4 +1,3 @@
-# IAM Role for doc_ingestor Lambda
 resource "aws_iam_role" "doc_ingestor_role" {
   name = "aws-ai-assistant-doc-ingestor-role"
 
@@ -22,7 +21,6 @@ resource "aws_iam_role" "doc_ingestor_role" {
   }
 }
 
-# IAM Policy for doc_ingestor Lambda
 resource "aws_iam_policy" "doc_ingestor_policy" {
   name        = "aws-ai-assistant-doc-ingestor-policy"
   description = "Policy for doc_ingestor Lambda function"
@@ -64,13 +62,11 @@ resource "aws_iam_policy" "doc_ingestor_policy" {
   })
 }
 
-# Attach policy to doc_ingestor role
 resource "aws_iam_role_policy_attachment" "doc_ingestor_policy" {
   role       = aws_iam_role.doc_ingestor_role.name
   policy_arn = aws_iam_policy.doc_ingestor_policy.arn
 }
 
-# IAM Role for query_processor Lambda
 resource "aws_iam_role" "query_processor_role" {
   name = "aws-ai-assistant-query-processor-role"
 
@@ -94,7 +90,6 @@ resource "aws_iam_role" "query_processor_role" {
   }
 }
 
-# IAM Policy for query_processor Lambda
 resource "aws_iam_policy" "query_processor_policy" {
   name        = "aws-ai-assistant-query-processor-policy"
   description = "Policy for query_processor Lambda function"
@@ -149,7 +144,6 @@ resource "aws_iam_policy" "query_processor_policy" {
   })
 }
 
-# Attach policy to query_processor role
 resource "aws_iam_role_policy_attachment" "query_processor_policy" {
   role       = aws_iam_role.query_processor_role.name
   policy_arn = aws_iam_policy.query_processor_policy.arn

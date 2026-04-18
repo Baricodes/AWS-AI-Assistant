@@ -1,4 +1,3 @@
-// Read API endpoint from generated config (window.APP_CONFIG.apiEndpoint)
 const API = (window.APP_CONFIG && window.APP_CONFIG.apiEndpoint) || "";
 if (!API) {
   alert('API endpoint is not configured. Ensure frontend/config/config.js exists.');
@@ -166,5 +165,4 @@ function escapeHtml(str) {
 function escapeAttr(str) {
   return String(str).replaceAll('"', '&quot;');
 }
-
 

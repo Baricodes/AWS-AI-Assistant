@@ -48,18 +48,6 @@ output "opensearch_dashboard_url" {
   value       = aws_opensearchserverless_collection.kb_vector.dashboard_endpoint
 }
 
-# ECR Repository Outputs
-output "ecr_repository_url" {
-  description = "URL of the ECR repository for Lambda container images"
-  value       = aws_ecr_repository.lambda_images.repository_url
-}
-
-output "ecr_repository_arn" {
-  description = "ARN of the ECR repository for Lambda container images"
-  value       = aws_ecr_repository.lambda_images.arn
-}
-
-# Lambda Function Outputs
 output "doc_ingestor_lambda_arn" {
   description = "ARN of the doc_ingestor Lambda function"
   value       = aws_lambda_function.doc_ingestor.arn
@@ -95,7 +83,6 @@ output "http_api_ask_endpoint" {
   value       = "${aws_apigatewayv2_api.query_api.api_endpoint}/prod/ask"
 }
 
-# Back-compat alias used by scripts
 output "api_gateway_query_endpoint" {
   description = "Alias of http_api_ask_endpoint for script compatibility"
   value       = "${aws_apigatewayv2_api.query_api.api_endpoint}/prod/ask"

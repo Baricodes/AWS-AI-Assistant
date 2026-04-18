@@ -48,8 +48,8 @@ override.tf.json
 *.tfvars.backup
 *tfplan*
 
-# Lambda deployment bundles (built by deploy.sh)
-terraform/lambda_packages/*.zip
+# Build artifacts (Lambda zips, etc.)
+.build/
 
 # Docker
 *.tar

@@ -136,7 +136,6 @@ Before you begin, ensure you have the following:
 - **AWS CLI** (v2.x) - [Installation Guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 - **Docker** (latest) - [Installation Guide](https://docs.docker.com/get-docker/)
 - **Terraform** (>= 1.0) - [Installation Guide](https://developer.hashicorp.com/terraform/downloads)
-- **jq** (latest) - [Installation Guide](https://stedolan.github.io/jq/download/)
 - **Python 3** (3.9+) - [Installation Guide](https://www.python.org/downloads/)
 
 ### AWS Account Requirements
@@ -209,7 +208,6 @@ Verify all required tools are installed:
 aws --version
 docker --version
 terraform version
-jq --version
 python3 --version
 ```
 
@@ -223,28 +221,43 @@ python3 --version
 
 ### 5. Deploy Infrastructure
 
-Run the deployment script from the project root:
+From the **repository root**, build Lambda zip bundles (Docker installs Amazon Linux–compatible dependencies), then apply Terraform:
 
 ```bash
-cd scripts
-./deploy.sh
+REPO_ROOT=$(pwd)
+mkdir -p .build
+for name in doc_ingestor query_processor; do
+  work=$(mktemp -d)
+  cp requirements.txt "$work/"
+  cp "terraform/lambda/${name}.py" "$work/"
+  docker run --rm --platform linux/amd64 -v "$work:/var/task" public.ecr.aws/lambda/python:3.11 \
+    bash -c "cd /var/task && pip install -r requirements.txt -t . -q"
+  find "$work" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+  (cd "$work" && zip -r9 "$REPO_ROOT/.build/${name}.zip" .)
+  rm -rf "$work"
+done
+
+cd terraform
+terraform init
+terraform apply
+# If you use a Bedrock inference profile for generation, pass:
+# terraform apply -var='gen_inference_profile_id=<PROFILE_ID_OR_ARN>'
+cd ..
 ```
 
-For initial deployment with a Bedrock inference profile (if using on-demand models):
+Write the frontend API URL (after apply):
 
 ```bash
-./deploy.sh --gen-inference-profile-id <PROFILE_ID_OR_ARN>
+API_URL=$(cd terraform && terraform output -raw http_api_ask_endpoint)
+mkdir -p frontend/config
+printf '%s\n' "window.APP_CONFIG = { apiEndpoint: \"$API_URL\" };" > frontend/config/config.js
 ```
 
-The deployment script will:
-1. Check prerequisites
-2. Deploy stage-1 Terraform (S3, OpenSearch, IAM, etc.)
-3. Build Lambda zip packages (`terraform/lambda_packages/*.zip`) using Docker to install Linux dependencies
-4. Apply full Terraform (Lambda functions, API Gateway, etc.)
-5. Initialize OpenSearch index
-6. Generate frontend configuration
+The `kb_chunks` OpenSearch index is created on first Lambda run if it does not already exist.
 
 **Note**: Initial deployment takes approximately 10-15 minutes.
+
+To tear down: empty the S3 document bucket (including versions) if `terraform destroy` reports it is not empty, then run `terraform destroy` from `terraform/`.
 
 ## ⚙️ Configuration
 
@@ -292,59 +305,26 @@ The OpenSearch index `kb_chunks` is configured with:
 
 ## 🚢 Deployment
 
-### Initial Deployment
+### Initial deployment
 
-Run the deployment script from the project root:
+Follow **Deploy Infrastructure** (build `.build/*.zip`, run `terraform apply`, write `frontend/config/config.js`).
 
-```bash
-cd scripts
-./deploy.sh
-```
+### Update Lambda code only
 
-This script will:
-1. Deploy foundational infrastructure (S3, OpenSearch, IAM roles)
-2. Build Lambda zip packages under `terraform/lambda_packages/`
-3. Deploy remaining infrastructure (Lambda functions, API Gateway)
-4. Initialize OpenSearch index with proper mappings
-5. Generate frontend configuration file
-
-### Update Deployment
-
-To update Lambda functions with new code without redeploying infrastructure:
+Rebuild the zips (same Docker loop as in **Deploy Infrastructure**), then from the repository root:
 
 ```bash
-cd scripts
-./deploy.sh --update
+aws lambda update-function-code --function-name aws-ai-assistant-doc-ingestor \
+  --zip-file fileb://.build/doc_ingestor.zip --region us-east-1 --no-cli-pager
+aws lambda update-function-code --function-name aws-ai-assistant-query-processor \
+  --zip-file fileb://.build/query_processor.zip --region us-east-1 --no-cli-pager
+aws lambda wait function-active --function-name aws-ai-assistant-doc-ingestor --region us-east-1
+aws lambda wait function-active --function-name aws-ai-assistant-query-processor --region us-east-1
 ```
 
-This skips Terraform deployment and only:
-1. Rebuilds Lambda zip packages
-2. Updates existing Lambda function code from those zips
-3. Waits for functions to become active
+### Terraform only (zips already built)
 
-### Deployment Options
-
-The deployment script supports several options:
-
-```bash
-# Standard deployment
-./deploy.sh
-
-# Update mode (skip Terraform, only update Lambdas)
-./deploy.sh --update
-
-# Deploy with Bedrock inference profile
-./deploy.sh --gen-inference-profile-id <PROFILE_ID_OR_ARN>
-
-# Combine options
-./deploy.sh --update --gen-inference-profile-id <PROFILE_ID_OR_ARN>
-```
-
-### Manual Deployment (Alternative)
-
-The deployment script builds `terraform/lambda_packages/*.zip` before applying Terraform; **Docker must be running** for that step so dependencies install for Amazon Linux (`linux/amd64`).
-
-To apply only Terraform after those zips already exist:
+**Docker must be running** when building zips so dependencies install for Amazon Linux (`linux/amd64`).
 
 ```bash
 cd terraform
@@ -414,11 +394,7 @@ Response format:
 3. Type your question in the input field and press Enter
 4. View the answer with source citations
 
-**Note**: The frontend config file is automatically generated during deployment. If you need to update it manually:
-
-```bash
-# Update frontend/config/config.js with your API Gateway URL
-```
+**Note**: Generate `frontend/config/config.js` after Terraform apply (see **Deploy Infrastructure** above), or set `apiEndpoint` manually to your API URL.
 
 ### Viewing Results
 
@@ -483,9 +459,7 @@ aws dynamodb scan --table-name $TABLE_NAME --region us-east-1
 
 ```
 AWS-AI-Assitant/
-├── scripts/
-│   ├── deploy.sh                  # Main deployment script
-│   └── destroy.sh                 # Teardown script
+├── .build/                        # Built Lambda zips (gitignored)
 ├── terraform/
 │   ├── main.tf                    # Terraform provider configuration
 │   ├── variables.tf               # Terraform variables
@@ -497,7 +471,6 @@ AWS-AI-Assitant/
 │   ├── lambda/                    # Lambda handler source (Python)
 │   │   ├── doc_ingestor.py
 │   │   └── query_processor.py
-│   ├── lambda_packages/           # Built zip bundles (.zip gitignored; created by deploy.sh)
 │   ├── opensearch.tf              # OpenSearch Serverless
 │   └── s3.tf                      # S3 bucket configuration
 ├── config/
@@ -512,22 +485,21 @@ AWS-AI-Assitant/
 │   └── js/
 │       └── app.js                 # Frontend JavaScript
 ├── requirements.txt               # Python dependencies
-├── README.md                      # This file
-└── READ_ME_FRAMEWORK.md          # README framework template
+└── README.md                      # This file
 ```
 
 ## 🔧 Troubleshooting
 
 ### Deployment Issues
 
-**Issue**: Terraform fails because `lambda_packages/*.zip` is missing
-- **Solution**: Run `./deploy.sh` from `scripts` so it builds the zips before `terraform apply`. Docker must be running for the pip install step.
+**Issue**: Terraform fails because `.build/*.zip` is missing
+- **Solution**: Build the zips with the Docker loop under **Deploy Infrastructure** before `terraform apply`. Docker must be running for the pip install step.
 
 **Issue**: Lambda fails at runtime with `No module named ...`
-- **Solution**: Rebuild zips on a machine with Docker available (`./deploy.sh --update`) so dependencies are installed for Amazon Linux, not your local OS.
+- **Solution**: Rebuild zips with Docker (`linux/amd64`) so dependencies match the Lambda runtime, not your local OS.
 
 **Issue**: Lambda function update fails
-- **Solution**: Confirm `aws lambda update-function-code` completed and check CloudWatch Logs for import errors. Verify the zip was built with the same runtime/architecture as Lambda (the deploy script targets `linux/amd64` to match default Lambda architecture).
+- **Solution**: Confirm `aws lambda update-function-code` completed and check CloudWatch Logs for import errors. Verify the zip was built for `linux/amd64` to match the Lambda architecture in Terraform.
 
 ### Runtime Issues
 
@@ -566,11 +538,7 @@ AWS-AI-Assitant/
 ```
 
 **Re-initialize Index**:
-The deployment script automatically creates the index. To manually recreate:
-```bash
-cd scripts
-# The initialize_opensearch_index function in deploy.sh can be run separately
-```
+The index is created on first Lambda invocation if missing. To recreate it yourself, use the OpenSearch API or console with the mapping in `config/open_search_index.json`.
 
 **Check Lambda Function Status**:
 ```bash
