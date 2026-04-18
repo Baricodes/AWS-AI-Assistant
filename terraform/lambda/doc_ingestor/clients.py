@@ -20,9 +20,7 @@ awsauth = AWS4Auth(
 )
 
 os_client = OpenSearch(
-    hosts=[
-        {"host": config.OPENSEARCH_ENDPOINT.replace("https://", ""), "port": 443}
-    ],
+    hosts=[{"host": config.OPENSEARCH_ENDPOINT.replace("https://", ""), "port": 443}],
     http_auth=awsauth,
     use_ssl=True,
     verify_certs=True,

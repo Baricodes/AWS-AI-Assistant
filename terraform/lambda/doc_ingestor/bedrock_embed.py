@@ -54,16 +54,12 @@ def embed(
                 if isinstance(output_item, dict) and "embedding" in output_item:
                     embedding = output_item["embedding"]
                     logger.info(
-                        (
-                            "Successfully generated embedding from outputs: "
-                            "dimension=%d"
-                        ),
+                        ("Successfully generated embedding from outputs: dimension=%d"),
                         len(embedding),
                     )
                     return embedding
         error_msg = (
-            "No 'embedding' found in model response: "
-            + json.dumps(payload)[:1000]
+            "No 'embedding' found in model response: " + json.dumps(payload)[:1000]
         )
         logger.error(error_msg)
         raise RuntimeError(error_msg)

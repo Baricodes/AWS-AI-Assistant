@@ -15,7 +15,8 @@ def already_ingested(bucket, key):
     except ClientError as e:
         if e.response["Error"]["Code"] in ("404", "403"):
             return False
-        raise  # re-raise unexpected errors
+        raise
+
 
 WHITEPAPERS = [
     {
@@ -57,6 +58,8 @@ def handler(event, context):
 
         except Exception as e:
             print(f"Failed to fetch {paper['name']}: {e}")
-            results.append({"paper": paper["name"], "status": "failed", "error": str(e)})
+            results.append(
+                {"paper": paper["name"], "status": "failed", "error": str(e)}
+            )
 
     return {"processed": results}

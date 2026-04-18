@@ -1,3 +1,11 @@
+# =============================================================================
+# IAM — Lambda execution roles, inline policies, attachments
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# doc_ingestor — logs, S3 read, AOSS, Titan embed
+# -----------------------------------------------------------------------------
+# aws_iam_role.doc_ingestor_role
 resource "aws_iam_role" "doc_ingestor_role" {
   name = "aws-ai-assistant-doc-ingestor-role"
 
@@ -21,6 +29,7 @@ resource "aws_iam_role" "doc_ingestor_role" {
   }
 }
 
+# aws_iam_policy.doc_ingestor_policy
 resource "aws_iam_policy" "doc_ingestor_policy" {
   name        = "aws-ai-assistant-doc-ingestor-policy"
   description = "Policy for doc_ingestor Lambda function"
@@ -62,11 +71,16 @@ resource "aws_iam_policy" "doc_ingestor_policy" {
   })
 }
 
+# aws_iam_role_policy_attachment.doc_ingestor_policy
 resource "aws_iam_role_policy_attachment" "doc_ingestor_policy" {
   role       = aws_iam_role.doc_ingestor_role.name
   policy_arn = aws_iam_policy.doc_ingestor_policy.arn
 }
 
+# -----------------------------------------------------------------------------
+# query_processor — logs, AOSS, Bedrock embed + Claude, inference profiles
+# -----------------------------------------------------------------------------
+# aws_iam_role.query_processor_role
 resource "aws_iam_role" "query_processor_role" {
   name = "aws-ai-assistant-query-processor-role"
 
@@ -90,6 +104,7 @@ resource "aws_iam_role" "query_processor_role" {
   }
 }
 
+# aws_iam_policy.query_processor_policy
 resource "aws_iam_policy" "query_processor_policy" {
   name        = "aws-ai-assistant-query-processor-policy"
   description = "Policy for query_processor Lambda function"
@@ -144,9 +159,6 @@ resource "aws_iam_policy" "query_processor_policy" {
           "arn:aws:bedrock:*:*:inference-profile/*"
         ]
       },
-      # Anthropic serverless models require Marketplace subscription; Bedrock can
-      # auto-subscribe on invoke if the role allows these actions (see model product IDs:
-      # https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-product-ids.html ).
       {
         Effect = "Allow"
         Action = [
@@ -169,11 +181,16 @@ resource "aws_iam_policy" "query_processor_policy" {
   })
 }
 
+# aws_iam_role_policy_attachment.query_processor_policy
 resource "aws_iam_role_policy_attachment" "query_processor_policy" {
   role       = aws_iam_role.query_processor_role.name
   policy_arn = aws_iam_policy.query_processor_policy.arn
 }
 
+# -----------------------------------------------------------------------------
+# whitepaper_scheduler — logs, S3 ingest/ prefix read-write
+# -----------------------------------------------------------------------------
+# aws_iam_role.whitepaper_scheduler_role
 resource "aws_iam_role" "whitepaper_scheduler_role" {
   name = "aws-ai-assistant-whitepaper-scheduler-role"
 
@@ -197,6 +214,7 @@ resource "aws_iam_role" "whitepaper_scheduler_role" {
   }
 }
 
+# aws_iam_policy.whitepaper_scheduler_policy
 resource "aws_iam_policy" "whitepaper_scheduler_policy" {
   name        = "aws-ai-assistant-whitepaper-scheduler-policy"
   description = "Policy for weekly whitepaper fetch Lambda (S3 GetObject/HeadObject, PutObject on ingest/)"
@@ -216,21 +234,22 @@ resource "aws_iam_policy" "whitepaper_scheduler_policy" {
       {
         Effect = "Allow"
         Action = [
-            "s3:GetObject",
-            "s3:PutObject",
-            "s3:DeleteObject",
-            "s3:HeadObject",
-            "s3:ListBucket"
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:HeadObject",
+          "s3:ListBucket"
         ]
         Resource = [
-            "${aws_s3_bucket.knowledge_assistant_docs.arn}/ingest/*",
-            aws_s3_bucket.knowledge_assistant_docs.arn
+          "${aws_s3_bucket.knowledge_assistant_docs.arn}/ingest/*",
+          aws_s3_bucket.knowledge_assistant_docs.arn
         ]
       }
     ]
   })
 }
 
+# aws_iam_role_policy_attachment.whitepaper_scheduler_policy
 resource "aws_iam_role_policy_attachment" "whitepaper_scheduler_policy" {
   role       = aws_iam_role.whitepaper_scheduler_role.name
   policy_arn = aws_iam_policy.whitepaper_scheduler_policy.arn

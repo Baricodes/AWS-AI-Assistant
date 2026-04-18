@@ -28,11 +28,8 @@ def handler(event, ctx):
 
     try:
         method = (
-            (event.get("requestContext", {}).get("http", {}) or {}).get(
-                "method", ""
-            )
+            (event.get("requestContext", {}).get("http", {}) or {}).get("method", "")
         ).upper()
-        # CORS preflight must succeed without side effects (no OpenSearch calls).
         if method == "OPTIONS":
             return {"statusCode": 204, "headers": CORS_HEADERS, "body": ""}
 

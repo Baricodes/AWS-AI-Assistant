@@ -1,3 +1,8 @@
+# =============================================================================
+# API Gateway HTTP API — POST /ask → query_processor Lambda
+# =============================================================================
+
+# aws_apigatewayv2_api.query_api
 resource "aws_apigatewayv2_api" "query_api" {
   name          = "aws-ai-assistant-query-http-api"
   protocol_type = "HTTP"
@@ -15,6 +20,7 @@ resource "aws_apigatewayv2_api" "query_api" {
   }
 }
 
+# aws_apigatewayv2_integration.query_integration — AWS_PROXY to query_processor
 resource "aws_apigatewayv2_integration" "query_integration" {
   api_id                 = aws_apigatewayv2_api.query_api.id
   integration_type       = "AWS_PROXY"
@@ -23,24 +29,28 @@ resource "aws_apigatewayv2_integration" "query_integration" {
   payload_format_version = "2.0"
 }
 
+# aws_apigatewayv2_route.ask_route
 resource "aws_apigatewayv2_route" "ask_route" {
   api_id    = aws_apigatewayv2_api.query_api.id
   route_key = "POST /ask"
   target    = "integrations/${aws_apigatewayv2_integration.query_integration.id}"
 }
 
+# aws_apigatewayv2_route.ask_options_route — CORS preflight
 resource "aws_apigatewayv2_route" "ask_options_route" {
   api_id    = aws_apigatewayv2_api.query_api.id
   route_key = "OPTIONS /ask"
   target    = "integrations/${aws_apigatewayv2_integration.query_integration.id}"
 }
 
+# aws_apigatewayv2_stage.prod — named stage with auto_deploy
 resource "aws_apigatewayv2_stage" "prod" {
   api_id      = aws_apigatewayv2_api.query_api.id
   name        = "prod"
   auto_deploy = true
 }
 
+# aws_lambda_permission.allow_http_api — API Gateway may invoke query_processor
 resource "aws_lambda_permission" "allow_http_api" {
   statement_id  = "AllowExecutionFromHTTPAPI"
   action        = "lambda:InvokeFunction"

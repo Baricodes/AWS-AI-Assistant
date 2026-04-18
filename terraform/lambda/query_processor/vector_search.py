@@ -16,17 +16,13 @@ def search(vec: list, k: int = 5) -> list[dict]:
         len(vec),
     )
     query = {"knn": {"embedding": {"vector": vec, "k": k}}}
-    res = clients.os_client.search(
-        index=config.INDEX, body={"size": k, "query": query}
-    )
+    res = clients.os_client.search(index=config.INDEX, body={"size": k, "query": query})
     hits = res.get("hits", {}).get("hits", [])
     total_field = res.get("hits", {}).get("total")
     total_hits = (
         total_field.get("value") if isinstance(total_field, dict) else total_field
     )
-    sources = [
-        h["_source"].get("s3_key") or h["_source"].get("source") for h in hits
-    ]
+    sources = [h["_source"].get("s3_key") or h["_source"].get("source") for h in hits]
     logger.info(
         "Search completed: total_hits=%s, returned=%d, sources=%s",
         total_hits,
@@ -37,8 +33,7 @@ def search(vec: list, k: int = 5) -> list[dict]:
         {
             "text": h.get("_source", {}).get("chunk_text", ""),
             "source": (
-                h.get("_source", {}).get("s3_key")
-                or h.get("_source", {}).get("source")
+                h.get("_source", {}).get("s3_key") or h.get("_source", {}).get("source")
             ),
             "score": h.get("_score"),
         }

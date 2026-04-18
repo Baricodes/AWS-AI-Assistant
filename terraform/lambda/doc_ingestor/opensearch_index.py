@@ -65,10 +65,7 @@ def index_chunk(
 ) -> None:
     """Index a single chunk into OpenSearch."""
     logger.debug(
-        (
-            "Indexing chunk: doc_id=%s, chunk_id=%s, text_length=%d, "
-            "embedding_dim=%d"
-        ),
+        ("Indexing chunk: doc_id=%s, chunk_id=%s, text_length=%d, embedding_dim=%d"),
         doc_id,
         str(chunk_id),
         len(chunk_text_value),

@@ -1,3 +1,8 @@
+# =============================================================================
+# Outputs — values for scripts, CI, and operators
+# =============================================================================
+
+# --- S3 (knowledge_assistant_docs) ---
 output "s3_bucket_name" {
   description = "Name of the S3 bucket"
   value       = aws_s3_bucket.knowledge_assistant_docs.bucket
@@ -13,21 +18,7 @@ output "s3_bucket_domain_name" {
   value       = aws_s3_bucket.knowledge_assistant_docs.bucket_domain_name
 }
 
-output "dynamodb_table_name" {
-  description = "Name of the DynamoDB table"
-  value       = aws_dynamodb_table.knowledge_base.name
-}
-
-output "dynamodb_table_arn" {
-  description = "ARN of the DynamoDB table"
-  value       = aws_dynamodb_table.knowledge_base.arn
-}
-
-output "dynamodb_table_id" {
-  description = "ID of the DynamoDB table"
-  value       = aws_dynamodb_table.knowledge_base.id
-}
-
+# --- OpenSearch Serverless (kb_vector collection) ---
 output "opensearch_collection_id" {
   description = "ID of the OpenSearch Serverless collection"
   value       = aws_opensearchserverless_collection.kb_vector.id
@@ -48,6 +39,7 @@ output "opensearch_dashboard_url" {
   value       = aws_opensearchserverless_collection.kb_vector.dashboard_endpoint
 }
 
+# --- Lambda: doc_ingestor ---
 output "doc_ingestor_lambda_arn" {
   description = "ARN of the doc_ingestor Lambda function"
   value       = aws_lambda_function.doc_ingestor.arn
@@ -58,6 +50,7 @@ output "doc_ingestor_lambda_name" {
   value       = aws_lambda_function.doc_ingestor.function_name
 }
 
+# --- Lambda: query_processor ---
 output "query_processor_lambda_arn" {
   description = "ARN of the query_processor Lambda function"
   value       = aws_lambda_function.query_processor.arn
@@ -68,6 +61,7 @@ output "query_processor_lambda_name" {
   value       = aws_lambda_function.query_processor.function_name
 }
 
+# --- Lambda: whitepaper_scheduler + EventBridge ---
 output "whitepaper_scheduler_lambda_arn" {
   description = "ARN of the weekly whitepaper fetch Lambda"
   value       = aws_lambda_function.whitepaper_scheduler.arn
@@ -83,6 +77,7 @@ output "whitepaper_scheduler_event_rule_name" {
   value       = aws_cloudwatch_event_rule.whitepaper_scheduler_weekly.name
 }
 
+# --- API Gateway HTTP API (query_api) ---
 output "http_api_id" {
   description = "ID of the HTTP API"
   value       = aws_apigatewayv2_api.query_api.id

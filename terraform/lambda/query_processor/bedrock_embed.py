@@ -20,9 +20,7 @@ def embed(text: str) -> list:
         resp = clients.bedrock.invoke_model(modelId=config.EMBED_MODEL_ID, body=body)
         payload = json.loads(resp["body"].read())
         embedding = payload["embedding"]
-        logger.info(
-            "Successfully generated embedding: dimension=%d", len(embedding)
-        )
+        logger.info("Successfully generated embedding: dimension=%d", len(embedding))
         return embedding
     except Exception as e:
         logger.error("Embedding failed: %s - %s", type(e).__name__, str(e))

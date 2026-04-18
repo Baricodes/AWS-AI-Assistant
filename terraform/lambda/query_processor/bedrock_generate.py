@@ -16,10 +16,7 @@ def answer_with_context(question: str, contexts: list[dict]) -> str:
         else config.GEN_MODEL_ID
     )
     logger.info(
-        (
-            "Generating answer: model=%s, question_length=%d, "
-            "context_count=%d"
-        ),
+        ("Generating answer: model=%s, question_length=%d, context_count=%d"),
         model_id_to_use,
         len(question),
         len(contexts),
@@ -36,9 +33,7 @@ def answer_with_context(question: str, contexts: list[dict]) -> str:
 
     prompt = f"{system}\n\nQuestion:\n{question}\n\nContext:\n{context_blob}\n\nAnswer:"
     request_body = {
-        "messages": [
-            {"role": "user", "content": [{"type": "text", "text": prompt}]}
-        ],
+        "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
         "max_tokens": 500,
     }
     if "anthropic" in model_id_to_use.lower():
@@ -67,7 +62,5 @@ def answer_with_context(question: str, contexts: list[dict]) -> str:
         logger.info("Successfully generated answer: answer_length=%d", len(answer))
         return answer
     except Exception as e:
-        logger.error(
-            "Answer generation failed: %s - %s", type(e).__name__, str(e)
-        )
+        logger.error("Answer generation failed: %s - %s", type(e).__name__, str(e))
         raise

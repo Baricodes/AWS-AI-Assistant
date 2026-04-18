@@ -1,3 +1,8 @@
+# =============================================================================
+# S3 — knowledge bucket, public access block, placeholder prefix keys
+# =============================================================================
+
+# aws_s3_bucket.knowledge_assistant_docs
 resource "aws_s3_bucket" "knowledge_assistant_docs" {
   bucket = var.bucket_name
 
@@ -8,6 +13,7 @@ resource "aws_s3_bucket" "knowledge_assistant_docs" {
   }
 }
 
+# aws_s3_bucket_public_access_block.knowledge_assistant_docs
 resource "aws_s3_bucket_public_access_block" "knowledge_assistant_docs" {
   bucket = aws_s3_bucket.knowledge_assistant_docs.id
 
@@ -17,12 +23,14 @@ resource "aws_s3_bucket_public_access_block" "knowledge_assistant_docs" {
   restrict_public_buckets = true
 }
 
+# aws_s3_object.ingest_folder — ensures ingest/ prefix exists
 resource "aws_s3_object" "ingest_folder" {
   bucket       = aws_s3_bucket.knowledge_assistant_docs.id
   key          = "ingest/"
   content_type = "application/x-directory"
 }
 
+# aws_s3_object.processed_folder — ensures processed/ prefix exists
 resource "aws_s3_object" "processed_folder" {
   bucket       = aws_s3_bucket.knowledge_assistant_docs.id
   key          = "processed/"

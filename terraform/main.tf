@@ -1,3 +1,7 @@
+# =============================================================================
+# Terraform: required providers and version constraints
+# =============================================================================
+
 terraform {
   required_providers {
     aws = {
@@ -16,8 +20,16 @@ terraform {
       source  = "hashicorp/local"
       version = "~> 2.5"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 }
+
+# -----------------------------------------------------------------------------
+# Provider: AWS (region from var.aws_region)
+# -----------------------------------------------------------------------------
 
 provider "aws" {
   region = var.aws_region

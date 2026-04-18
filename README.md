@@ -86,11 +86,6 @@ The system is built using a serverless architecture: each handler is a **Python 
 │   Bedrock     │            │ OpenSearch        │
 │  (Embeddings) │            │ Serverless        │
 └───────────────┘            └──────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                         DynamoDB                             │
-│   Table provisioned (not used by current Lambda handlers)  │
-└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Data Flow
@@ -115,7 +110,6 @@ The system is built using a serverless architecture: each handler is a **Python 
 - **query_processor Lambda**: Python 3.11 zip package plus shared dependency layer; handles user queries, vector search, and answer generation
 - **OpenSearch Serverless**: Vector database for storing and searching document embeddings using kNN search
 - **API Gateway**: HTTP API providing REST endpoint for querying the knowledge base
-- **DynamoDB**: A table is created by Terraform for optional future use; the current `doc_ingestor` and `query_processor` code paths do not read or write it
 - **Amazon Bedrock**: Provides embedding generation (Titan Embed) and text generation (Claude 3.5 Sonnet)
 - **Frontend**: Static web interface for interacting with the knowledge assistant
 
@@ -148,7 +142,6 @@ Before you begin, ensure you have the following:
   - AWS Lambda
   - Amazon OpenSearch Serverless
   - Amazon API Gateway
-  - Amazon DynamoDB
   - Amazon Bedrock (with model access enabled)
   - AWS IAM
 
@@ -265,7 +258,6 @@ Key variables you can configure in `terraform/variables.tf`:
 |----------|-------------|---------|
 | `aws_region` | AWS region for all resources | `us-east-1` |
 | `bucket_name` | S3 bucket name for documents (globally unique) | *(required; set in `terraform.tfvars`)* |
-| `table_name` | DynamoDB table name | `KnowledgeBase` |
 | `collection_name` | OpenSearch Serverless collection name | `kb-vector` |
 | `gen_inference_profile_id` | Bedrock inference profile ID/ARN | `us.anthropic.claude-sonnet-4-20250514-v1:0` (override as needed) |
 
@@ -422,13 +414,6 @@ aws logs tail /aws/lambda/aws-ai-assistant-doc-ingestor --follow --region us-eas
 aws logs tail /aws/lambda/aws-ai-assistant-query-processor --follow --region us-east-1
 ```
 
-**DynamoDB**: Terraform creates a table (outputs: `dynamodb_table_name`), but the current Lambdas do not use it, so scans will typically be empty unless you add your own writers:
-
-```bash
-TABLE_NAME=$(cd terraform && terraform output -raw dynamodb_table_name)
-aws dynamodb scan --table-name $TABLE_NAME --region us-east-1
-```
-
 ### Testing the Deployment
 
 1. **Upload a test document**:
@@ -461,7 +446,6 @@ AWS-AI-Assitant/
 │   ├── variables.tf               # Terraform variables
 │   ├── outputs.tf                 # Terraform outputs
 │   ├── api_gateway.tf             # API Gateway configuration
-│   ├── dynamodb.tf                # DynamoDB table
 │   ├── iam.tf                     # IAM roles and policies
 │   ├── lambda.tf                  # Lambda functions
 │   ├── lambda_packages.tf         # archive_file + dependency layer packaging
@@ -487,8 +471,7 @@ AWS-AI-Assitant/
 │   │   ├── common/                # Shared helpers (e.g. logging) for ingest + query zips
 │   │   │   ├── __init__.py
 │   │   │   └── logging_utils.py
-│   │   ├── layer_requirements.txt # Layer-only pip deps
-│   │   └── install_layer_deps.py  # pip install for layer (Terraform external data source)
+│   │   └── layer_requirements.txt # Layer-only pip deps (built into layer via Terraform)
 │   ├── opensearch.tf              # OpenSearch Serverless
 │   └── s3.tf                      # S3 bucket configuration
 ├── frontend/
@@ -509,7 +492,7 @@ AWS-AI-Assitant/
 ### Deployment Issues
 
 **Issue**: Terraform / `pip` fails while preparing the Lambda layer
-- **Solution**: Ensure Python 3 and `pip` work on the machine running Terraform, with network access to PyPI. If manylinux wheels cannot be resolved, the helper falls back to a plain `pip install` into the layer directory.
+- **Solution**: Ensure Python 3 and `pip` work on the machine running Terraform, with network access to PyPI.
 
 **Issue**: Lambda fails at runtime with `No module named ...`
 - **Solution**: Confirm the Lambda has the `aws-ai-assistant-lambda-deps` layer attached (see `terraform/lambda_packages.tf`). After changing `terraform/lambda/layer_requirements.txt`, run `terraform apply` so the layer is rebuilt and published.
@@ -571,7 +554,7 @@ aws bedrock list-foundation-models --region us-east-1 --query 'modelSummaries[?c
 
 ### Best Practices
 
-- **IAM Roles**: Lambda functions use least-privilege IAM roles with specific permissions for S3, OpenSearch, Bedrock, and DynamoDB access
+- **IAM Roles**: Lambda functions use least-privilege IAM roles with specific permissions for S3, OpenSearch, and Bedrock access
 - **OpenSearch Security**: OpenSearch Serverless uses encryption policies and network policies to secure data at rest and in transit
 - **API Gateway**: HTTP API enables CORS for browser calls; there is **no API authorizer** in the default Terraform stack—the `/ask` route is open to anyone who can reach the invoke URL. Restrict access (API keys, JWT, IAM authorizer, WAF, private integration, etc.) before production use.
 - **S3 Bucket**: S3 bucket has public access blocked and uses IAM-based access control
@@ -586,7 +569,6 @@ The deployment requires IAM permissions to create and manage:
 - S3 buckets and objects
 - OpenSearch Serverless collections, security policies, and access policies
 - API Gateway HTTP APIs
-- DynamoDB tables
 - CloudWatch Logs groups
 
 ### Data Privacy

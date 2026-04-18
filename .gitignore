@@ -18,9 +18,16 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
-.venv/
-venv/
 .mypy_cache/
+.ruff_cache/
+*.egg-info/
+.eggs/
+
+# Virtual environments (named venvs, e.g. .venv-lint)
+.venv/
+.venv-*/
+venv/
+ENV/
 
 # Environment / editor
 .env
@@ -28,13 +35,16 @@ venv/
 .vscode/
 .idea/
 
+# Local AWS config (never commit profiles/credentials)
+.aws/
+
 # Keys and local credential files (never commit)
 *.pem
 *.p12
 *.pfx
 
 # Terraform
-**/.terraform/*
+**/.terraform/
 .terraform/
 .terraformrc
 terraform.rc
@@ -48,6 +58,7 @@ override.tf.json
 *_override.tf.json
 *.override.tf
 *.override.tf.json
+# Keep terraform.tfvars.example; ignore real secrets
 *.tfvars
 *.tfvars.json
 *.tfvars.backup

@@ -8,9 +8,7 @@ class BufferedLogHandler(logging.Handler):
         super().__init__()
         self._records = []
         self.setFormatter(
-            logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )
 
     def emit(self, record):
