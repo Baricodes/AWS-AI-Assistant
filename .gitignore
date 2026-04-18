@@ -49,7 +49,6 @@ override.tf.json
 *tfplan*
 
 # Build artifacts (Lambda zips, etc.)
-.build/
 terraform/.build/
 terraform/lambda/.layer_content/
 terraform/lambda/.layer_deps_stamp

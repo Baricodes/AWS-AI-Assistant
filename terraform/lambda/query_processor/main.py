@@ -8,7 +8,7 @@ from query_processor import config
 from query_processor.bedrock_embed import embed
 from query_processor.bedrock_generate import answer_with_context
 from query_processor.http_response import CORS_HEADERS, response
-from query_processor.logging_utils import BufferedLogHandler
+from common.logging_utils import BufferedLogHandler
 from query_processor.opensearch_index import ensure_index_exists
 from query_processor.vector_search import search
 

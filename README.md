@@ -470,8 +470,7 @@ AWS-AI-Assitant/
 │   │   │   ├── clients.py
 │   │   │   ├── document_io.py
 │   │   │   ├── bedrock_embed.py
-│   │   │   ├── opensearch_index.py
-│   │   │   └── logging_utils.py
+│   │   │   └── opensearch_index.py
 │   │   ├── query_processor/       # query Lambda package (handler: query_processor.handler)
 │   │   │   ├── __init__.py
 │   │   │   ├── main.py
@@ -481,14 +480,14 @@ AWS-AI-Assitant/
 │   │   │   ├── bedrock_embed.py
 │   │   │   ├── bedrock_generate.py
 │   │   │   ├── vector_search.py
-│   │   │   ├── opensearch_index.py
+│   │   │   └── opensearch_index.py
+│   │   ├── common/                # Shared helpers (e.g. logging) for ingest + query zips
+│   │   │   ├── __init__.py
 │   │   │   └── logging_utils.py
 │   │   ├── layer_requirements.txt # Layer-only pip deps
 │   │   └── install_layer_deps.py  # pip install for layer (Terraform external data source)
 │   ├── opensearch.tf              # OpenSearch Serverless
 │   └── s3.tf                      # S3 bucket configuration
-├── config/
-│   └── open_search_index.json     # OpenSearch index configuration
 ├── frontend/
 │   ├── config/
 │   │   └── config.js              # Frontend API configuration (auto-generated)
@@ -552,7 +551,7 @@ AWS-AI-Assitant/
 ```
 
 **Re-initialize Index**:
-The index is created on first Lambda invocation if missing. To recreate it yourself, use the OpenSearch API or console with the mapping in `config/open_search_index.json`.
+The index is created on first Lambda invocation if missing. To recreate it yourself, use the OpenSearch API or console with the same mapping as the `index_config` dict in `terraform/lambda/doc_ingestor/opensearch_index.py` (mirrored in `terraform/lambda/query_processor/opensearch_index.py`).
 
 **Check Lambda Function Status**:
 ```bash

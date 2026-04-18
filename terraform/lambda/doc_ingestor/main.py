@@ -7,7 +7,7 @@ from doc_ingestor import config
 from doc_ingestor.bedrock_embed import embed
 from doc_ingestor.clients import s3
 from doc_ingestor.document_io import chunk_text, load_document_text
-from doc_ingestor.logging_utils import BufferedLogHandler
+from common.logging_utils import BufferedLogHandler
 from doc_ingestor.opensearch_index import ensure_index_exists, index_chunk
 
 logger = logging.getLogger(__name__)
