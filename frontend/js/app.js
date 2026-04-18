@@ -37,7 +37,9 @@ copyBtn.addEventListener('click', (e) => {
   e.preventDefault();
   const last = [...messages].reverse().find(m => m.role === 'assistant');
   if (!last) { showToast('No assistant answer to copy'); return; }
-  navigator.clipboard.writeText(last.text).then(() => showToast('Answer copied'));
+  navigator.clipboard.writeText(last.text)
+    .then(() => showToast('Answer copied'))
+    .catch(() => showToast('Copy failed (permission or browser restriction)'));
 });
 
 function loadMessages() {
@@ -120,8 +122,22 @@ async function send() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: text })
     });
-    if (!res.ok) throw new Error('Request failed: ' + res.status);
-    const data = await res.json();
+    const raw = await res.text();
+    let data;
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      throw new Error(
+        res.ok ? 'Invalid JSON from server' : `Request failed (${res.status})`
+      );
+    }
+    if (!res.ok) {
+      const detail =
+        (data && (data.message || data.error_type || data.error)) || '';
+      throw new Error(
+        detail ? `${detail} (${res.status})` : `Request failed (${res.status})`
+      );
+    }
     const answer = typeof data.answer === 'string' ? data.answer : JSON.stringify(data);
     const sources = Array.isArray(data.sources) ? data.sources : [];
     const botMsg = { role: 'assistant', text: answer, sources, ts: Date.now() };

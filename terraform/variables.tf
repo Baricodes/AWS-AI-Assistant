@@ -5,9 +5,8 @@ variable "aws_region" {
 }
 
 variable "bucket_name" {
-  description = "Name of the S3 bucket for knowledge assistant documents"
+  description = "Globally unique S3 bucket name for knowledge assistant documents (set in terraform.tfvars; see terraform.tfvars.example)."
   type        = string
-  default     = "aws-knowledge-assistant-docs-east1-232"
 }
 
 variable "table_name" {
@@ -23,7 +22,7 @@ variable "collection_name" {
 }
 
 variable "gen_inference_profile_id" {
-  description = "Bedrock inference profile ID or ARN to use for generation. If not provided, will fall back to GEN_MODEL_ID. Example: us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+  description = "Bedrock inference profile ID or ARN for generation (use an active regional profile, e.g. Claude Sonnet 4). If empty, code falls back to GEN_MODEL_ID."
   type        = string
-  default     = ""
+  default     = "us.anthropic.claude-sonnet-4-20250514-v1:0"
 }

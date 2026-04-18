@@ -47,10 +47,11 @@ resource "aws_lambda_function" "query_processor" {
   environment {
     variables = {
       BEDROCK_REGION           = var.aws_region
+      OPENSEARCH_REGION        = var.aws_region
       OPENSEARCH_ENDPOINT      = aws_opensearchserverless_collection.kb_vector.collection_endpoint
       OPENSEARCH_INDEX         = "kb_chunks"
       EMBED_MODEL_ID           = "amazon.titan-embed-text-v2:0"
-      GEN_MODEL_ID             = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+      GEN_MODEL_ID             = "anthropic.claude-sonnet-4-20250514-v1:0"
       GEN_INFERENCE_PROFILE_ID = var.gen_inference_profile_id
     }
   }

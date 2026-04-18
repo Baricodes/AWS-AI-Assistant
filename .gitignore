@@ -28,6 +28,11 @@ venv/
 .vscode/
 .idea/
 
+# Keys and local credential files (never commit)
+*.pem
+*.p12
+*.pfx
+
 # Terraform
 **/.terraform/*
 .terraform/

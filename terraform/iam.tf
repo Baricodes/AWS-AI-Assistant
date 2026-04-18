@@ -127,7 +127,11 @@ resource "aws_iam_policy" "query_processor_policy" {
         ]
         Resource = [
           "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0",
-          "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0"
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-sonnet-20241022-v2:0",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-3-7-sonnet-20250219-v1:0",
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-7-sonnet-20250219-v1:0",
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0"
         ]
       },
       {
@@ -139,6 +143,27 @@ resource "aws_iam_policy" "query_processor_policy" {
           "arn:aws:bedrock:${var.aws_region}:*:inference-profile/*",
           "arn:aws:bedrock:*:*:inference-profile/*"
         ]
+      },
+      # Anthropic serverless models require Marketplace subscription; Bedrock can
+      # auto-subscribe on invoke if the role allows these actions (see model product IDs:
+      # https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-product-ids.html ).
+      {
+        Effect = "Allow"
+        Action = [
+          "aws-marketplace:ViewSubscriptions",
+          "aws-marketplace:Subscribe",
+          "aws-marketplace:Unsubscribe"
+        ]
+        Resource = "*"
+        Condition = {
+          "ForAllValues:StringEquals" = {
+            "aws-marketplace:ProductId" = [
+              "prod-cx7ovbu5wex7g",
+              "prod-4dlfvry4v5hbi",
+              "prod-4pmewlybdftbs"
+            ]
+          }
+        }
       }
     ]
   })

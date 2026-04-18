@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars (gitignored) and replace placeholders. Do not commit terraform.tfvars.
+
+aws_region = "us-east-1"
+
+# Must be globally unique across all AWS accounts.
+bucket_name = "your-org-knowledge-assistant-docs-UNIQUE_SUFFIX"
+
+table_name       = "KnowledgeBase"
+collection_name  = "kb-vector"
+
+# Public Bedrock inference profile / model routing id (not a secret). Override if you use a different profile.
+gen_inference_profile_id = "us.anthropic.claude-sonnet-4-20250514-v1:0"

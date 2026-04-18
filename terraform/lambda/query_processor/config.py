@@ -11,7 +11,7 @@ EMBED_MODEL_ID = os.environ.get(
 )
 GEN_MODEL_ID = os.environ.get(
     "GEN_MODEL_ID",
-    "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "anthropic.claude-sonnet-4-20250514-v1:0",
 )
 GEN_INFERENCE_PROFILE_ID = os.environ.get("GEN_INFERENCE_PROFILE_ID")
 INDEX = os.environ.get("OPENSEARCH_INDEX", "kb_chunks")

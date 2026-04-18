@@ -18,7 +18,7 @@ bedrock = boto3.client(
 
 session = boto3.Session(region_name=config.OS_REGION)
 creds = session.get_credentials()
-awsauth = AWSV4SignerAuth(creds, "aoss", region=config.OS_REGION)
+awsauth = AWSV4SignerAuth(creds, config.OS_REGION, service="aoss")
 
 os_client = OpenSearch(
     hosts=[{"host": config.ENDPOINT.replace("https://", ""), "port": 443}],

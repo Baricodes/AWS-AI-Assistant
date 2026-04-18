@@ -230,6 +230,9 @@ Lambda deployment packages are produced by Terraform:
 From the **`terraform/`** directory:
 
 ```bash
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars: set bucket_name to a globally unique S3 bucket name.
+
 terraform init
 terraform apply
 # If you use a Bedrock inference profile for generation, pass:
@@ -261,10 +264,10 @@ Key variables you can configure in `terraform/variables.tf`:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `aws_region` | AWS region for all resources | `us-east-1` |
-| `bucket_name` | S3 bucket name for documents | `aws-knowledge-assistant-docs-east1-232` |
+| `bucket_name` | S3 bucket name for documents (globally unique) | *(required; set in `terraform.tfvars`)* |
 | `table_name` | DynamoDB table name | `KnowledgeBase` |
 | `collection_name` | OpenSearch Serverless collection name | `kb-vector` |
-| `gen_inference_profile_id` | Bedrock inference profile ID/ARN | `""` (optional) |
+| `gen_inference_profile_id` | Bedrock inference profile ID/ARN | `us.anthropic.claude-sonnet-4-20250514-v1:0` (override as needed) |
 
 ### Lambda Environment Variables
 
@@ -572,7 +575,7 @@ aws bedrock list-foundation-models --region us-east-1 --query 'modelSummaries[?c
 - **OpenSearch Security**: OpenSearch Serverless uses encryption policies and network policies to secure data at rest and in transit
 - **API Gateway**: HTTP API enables CORS for browser calls; there is **no API authorizer** in the default Terraform stack—the `/ask` route is open to anyone who can reach the invoke URL. Restrict access (API keys, JWT, IAM authorizer, WAF, private integration, etc.) before production use.
 - **S3 Bucket**: S3 bucket has public access blocked and uses IAM-based access control
-- **Secrets Management**: No hardcoded credentials; all authentication uses IAM roles and AWS credentials
+- **Secrets Management**: No hardcoded credentials in application code; runtime auth uses IAM roles. For Git, never commit `terraform.tfvars`, Terraform state (`.tfstate`), `frontend/config/config.js`, `.env` files, API keys, or private keys—this repository’s `.gitignore` excludes the usual Terraform and generated config paths; copy `terraform/terraform.tfvars.example` to `terraform.tfvars` locally instead.
 - **Deployment packages**: Lambda handlers are zipped by Terraform (`archive_file`); shared dependencies ship in a Lambda layer built with `pip` during `terraform plan` / `apply`
 - **Network**: OpenSearch Serverless uses encryption and data-access policies; the included network policy allows **public** access to the collection (`AllowFromPublic = true` in `terraform/opensearch.tf`). Tighten this if your compliance model requires private-only access.
 

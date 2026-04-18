@@ -1,3 +1,4 @@
-opensearch-py
+# Stay on 2.x: opensearch-py 3.0.x has had AWS SigV4 / body handling regressions with AOSS.
+opensearch-py>=2.6.0,<3
 requests-aws4auth
 pypdf>=4.0,<7
