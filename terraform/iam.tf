@@ -148,3 +148,65 @@ resource "aws_iam_role_policy_attachment" "query_processor_policy" {
   role       = aws_iam_role.query_processor_role.name
   policy_arn = aws_iam_policy.query_processor_policy.arn
 }
+
+resource "aws_iam_role" "whitepaper_scheduler_role" {
+  name = "aws-ai-assistant-whitepaper-scheduler-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "AWS AI Assistant Whitepaper Scheduler Role"
+    Environment = "production"
+    Project     = "aws-knowledge-assistant"
+  }
+}
+
+resource "aws_iam_policy" "whitepaper_scheduler_policy" {
+  name        = "aws-ai-assistant-whitepaper-scheduler-policy"
+  description = "Policy for weekly whitepaper fetch Lambda (S3 GetObject/HeadObject, PutObject on ingest/)"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "s3:HeadObject",
+            "s3:ListBucket"
+        ]
+        Resource = [
+            "${aws_s3_bucket.knowledge_assistant_docs.arn}/ingest/*",
+            aws_s3_bucket.knowledge_assistant_docs.arn
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "whitepaper_scheduler_policy" {
+  role       = aws_iam_role.whitepaper_scheduler_role.name
+  policy_arn = aws_iam_policy.whitepaper_scheduler_policy.arn
+}

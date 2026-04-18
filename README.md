@@ -2,6 +2,8 @@
 
 A serverless AI-powered knowledge assistant built on AWS that enables document ingestion, vector search, and intelligent question-answering using Amazon Bedrock, OpenSearch Serverless, and Lambda functions.
 
+**Quick start:** Configure AWS credentials for `us-east-1`, enable the Bedrock models listed under [Bedrock Model Access](#bedrock-model-access), run `terraform init` and `terraform apply` from `terraform/`, generate `frontend/config/config.js` from the `http_api_ask_endpoint` output ([Deploy Infrastructure](#5-deploy-infrastructure)), upload a `.txt` file to `s3://<bucket>/ingest/`, then `POST` JSON `{"question":"..."}` to that URL.
+
 ## 📋 Table of Contents
 
 - [Overview](#overview)
@@ -29,7 +31,7 @@ The AWS AI Assistant is a Retrieval-Augmented Generation (RAG) system that allow
 
 ## 🏗️ Architecture
 
-The system is built using a serverless architecture with containerized Lambda functions for scalability and flexibility.
+The system is built using a serverless architecture: each handler is a **Python 3.11 zip** artifact plus a **shared Lambda layer** for `opensearch-py` and `requests-aws4auth` (built when Terraform runs).
 
 ### Visual Diagram
 
@@ -47,7 +49,7 @@ The system is built using a serverless architecture with containerized Lambda fu
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│          query_processor Lambda (Container)                  │
+│          query_processor Lambda (zip + deps layer)          │
 │  • Embeds query via Bedrock                                  │
 │  • Vector search in OpenSearch                               │
 │  • Generates answer via Bedrock Claude                       │
@@ -64,13 +66,13 @@ The system is built using a serverless architecture with containerized Lambda fu
 
 ┌─────────────────────────────────────────────────────────────┐
 │                    S3 Bucket                                 │
-│  • ingest/ folder (triggers ingestion)                      │
-│  • processed/ folder (completed documents)                   │
+│  • ingest/ prefix (S3 events trigger ingestion)               │
+│  • objects remain in place after indexing                    │
 └──────────────────────┬──────────────────────────────────────┘
                        │ S3 Event
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│          doc_ingestor Lambda (Container)                     │
+│          doc_ingestor Lambda (zip + deps layer)              │
 │  • Downloads document from S3                               │
 │  • Chunks text                                               │
 │  • Generates embeddings via Bedrock                         │
@@ -86,8 +88,8 @@ The system is built using a serverless architecture with containerized Lambda fu
 └───────────────┘            └──────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│                    DynamoDB                                  │
-│          Knowledge base metadata storage                     │
+│                         DynamoDB                             │
+│   Table provisioned (not used by current Lambda handlers)  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -108,12 +110,12 @@ The system is built using a serverless architecture with containerized Lambda fu
 
 ### Components
 
-- **S3 Bucket**: Stores documents in `ingest/` folder (triggers processing) and `processed/` folder (completed documents)
-- **doc_ingestor Lambda**: Zip deployment package (Python 3.11) that processes S3 uploads, chunks text, generates embeddings, and indexes to OpenSearch
-- **query_processor Lambda**: Zip deployment package (Python 3.11) that handles user queries, performs vector search, and generates answers
+- **S3 Bucket**: Uploads under the `ingest/` prefix trigger `doc_ingestor`; processed content is indexed in OpenSearch and the S3 object is left in place (no automatic move to another prefix)
+- **doc_ingestor Lambda**: Python 3.11 zip package plus shared dependency layer; processes S3 uploads, chunks text, generates embeddings, and indexes to OpenSearch
+- **query_processor Lambda**: Python 3.11 zip package plus shared dependency layer; handles user queries, vector search, and answer generation
 - **OpenSearch Serverless**: Vector database for storing and searching document embeddings using kNN search
 - **API Gateway**: HTTP API providing REST endpoint for querying the knowledge base
-- **DynamoDB**: Stores knowledge base metadata and document information
+- **DynamoDB**: A table is created by Terraform for optional future use; the current `doc_ingestor` and `query_processor` code paths do not read or write it
 - **Amazon Bedrock**: Provides embedding generation (Titan Embed) and text generation (Claude 3.5 Sonnet)
 - **Frontend**: Static web interface for interacting with the knowledge assistant
 
@@ -125,7 +127,7 @@ The system is built using a serverless architecture with containerized Lambda fu
 - 📊 **Source Citations**: Answers include citations to source document chunks
 - 🎯 **Serverless Architecture**: Fully serverless with Lambda, API Gateway, and managed services
 - 🚀 **Terraform-Built Lambdas**: Each handler is zipped with the `archive_file` data source into `terraform/.build/`; a shared Lambda layer carries OpenSearch client libraries (installed via `pip` when Terraform plans)
-- 🔒 **Secure**: Uses IAM roles, OpenSearch Serverless security policies, and VPC endpoints
+- 🔒 **Secure building blocks**: IAM roles for Lambdas plus OpenSearch encryption and access policies; add API auth and stricter network rules before production
 
 ## 📦 Prerequisites
 
@@ -222,8 +224,8 @@ python3 -m pip --version
 
 Lambda deployment packages are produced by Terraform:
 
-- Each function’s code is a **single** `*.py` file, archived with the **`archive_file`** data source into `terraform/.build/<name>.zip`. Changing the handler changes the hash and updates the function on apply.
-- Third-party imports (`opensearch-py`, `requests-aws4auth`) are packaged in a **shared Lambda layer**; `terraform plan` / `apply` runs a small helper that `pip install`s them into `terraform/lambda/.layer_content/` (Linux-compatible wheels when possible) and zips that tree with `archive_file` as `terraform/.build/lambda_deps_layer.zip`.
+- **`doc_ingestor`** and **`query_processor`** are **Python packages** under `terraform/lambda/doc_ingestor/` and `terraform/lambda/query_processor/`, each zipped from the shared `lambda/` directory via **`archive_file`** with path excludes so only one package lands in each zip. Changing sources updates the hash and the function on apply.
+- Third-party imports (`opensearch-py`, `requests-aws4auth`, `pypdf`) are packaged in a **shared Lambda layer**; `terraform plan` / `apply` runs a small helper that `pip install`s them into `terraform/lambda/.layer_content/` (Linux-compatible wheels when possible) and zips that tree with `archive_file` as `terraform/.build/lambda_deps_layer.zip`.
 
 From the **`terraform/`** directory:
 
@@ -266,25 +268,31 @@ Key variables you can configure in `terraform/variables.tf`:
 
 ### Lambda Environment Variables
 
-The Lambda functions use the following environment variables (configured via Terraform):
+Terraform sets the variables below on each function. The Python handlers also read optional variables (`LOG_LEVEL`, `OPENSEARCH_REGION`, `CORS_ALLOW_ORIGIN`) that are **not** set in `terraform/lambda.tf` today; those fall back to code defaults.
 
-**doc_ingestor Lambda**:
-- `BEDROCK_REGION`: AWS region for Bedrock (default: `us-east-1`)
-- `EMBED_MODEL_ID`: Embedding model ID (default: `amazon.titan-embed-text-v2:0`)
+**doc_ingestor Lambda** (set by Terraform):
+- `BEDROCK_REGION`: Bedrock region (from `var.aws_region`)
+- `EMBED_MODEL_ID`: Embedding model ID (`amazon.titan-embed-text-v2:0`)
 - `OPENSEARCH_ENDPOINT`: OpenSearch Serverless collection endpoint
-- `OPENSEARCH_INDEX`: Index name (default: `kb_chunks`)
-- `LOG_LEVEL`: Logging level (default: `INFO`)
+- `OPENSEARCH_INDEX`: Index name (`kb_chunks`)
 
-**query_processor Lambda**:
-- `BEDROCK_REGION`: AWS region for Bedrock (default: `us-east-1`)
-- `OPENSEARCH_REGION`: AWS region for OpenSearch (default: `us-east-1`)
-- `EMBED_MODEL_ID`: Embedding model ID (default: `amazon.titan-embed-text-v2:0`)
-- `GEN_MODEL_ID`: Generation model ID (default: `anthropic.claude-3-5-sonnet-20241022-v2:0`)
-- `GEN_INFERENCE_PROFILE_ID`: Bedrock inference profile ID (optional, for on-demand models)
+**doc_ingestor Lambda** (optional; handler default if unset):
+- `LOG_LEVEL`: Logging level (`INFO`)
+
+**query_processor Lambda** (set by Terraform):
+- `BEDROCK_REGION`: Bedrock region (from `var.aws_region`)
+- `EMBED_MODEL_ID`: Embedding model ID (`amazon.titan-embed-text-v2:0`)
+- `GEN_MODEL_ID`: Generation model ID (`anthropic.claude-3-5-sonnet-20241022-v2:0`)
+- `GEN_INFERENCE_PROFILE_ID`: Bedrock inference profile ID or ARN (optional; empty string falls back to `GEN_MODEL_ID` in code)
 - `OPENSEARCH_ENDPOINT`: OpenSearch Serverless collection endpoint
-- `OPENSEARCH_INDEX`: Index name (default: `kb_chunks`)
-- `CORS_ALLOW_ORIGIN`: CORS allowed origin (default: `*`)
-- `LOG_LEVEL`: Logging level (default: `INFO`)
+- `OPENSEARCH_INDEX`: Index name (`kb_chunks`)
+
+**query_processor Lambda** (optional; handler default if unset):
+- `OPENSEARCH_REGION`: Region used for SigV4 to OpenSearch Serverless (`us-east-1`)
+- `CORS_ALLOW_ORIGIN`: Value for `Access-Control-Allow-Origin` on Lambda responses (`*`)
+- `LOG_LEVEL`: Logging level (`INFO`)
+
+HTTP API CORS is also configured on API Gateway in `terraform/api_gateway.tf` (`allow_origins = ["*"]` for `POST` and `OPTIONS` on `/ask`).
 
 ### OpenSearch Index Configuration
 
@@ -302,7 +310,7 @@ Follow **Deploy Infrastructure** (run `terraform apply` from `terraform/`, write
 
 ### Update Lambda code only
 
-Edit `terraform/lambda/doc_ingestor.py` or `terraform/lambda/query_processor.py`, then from **`terraform/`**:
+Edit `terraform/lambda/doc_ingestor/` or `terraform/lambda/query_processor/`, then from **`terraform/`**:
 
 ```bash
 terraform apply
@@ -384,11 +392,10 @@ Response format:
 
 ### Viewing Results
 
-**S3 Bucket**: Check the `ingest/` folder for uploaded documents and `processed/` folder for completed processing:
+**S3 Bucket**: After ingestion, objects remain under the `ingest/` prefix:
 
 ```bash
 aws s3 ls s3://$BUCKET_NAME/ingest/
-aws s3 ls s3://$BUCKET_NAME/processed/
 ```
 
 **OpenSearch**: Query the index directly (requires AWS credentials):
@@ -412,7 +419,7 @@ aws logs tail /aws/lambda/aws-ai-assistant-doc-ingestor --follow --region us-eas
 aws logs tail /aws/lambda/aws-ai-assistant-query-processor --follow --region us-east-1
 ```
 
-**DynamoDB**: Check knowledge base metadata:
+**DynamoDB**: Terraform creates a table (outputs: `dynamodb_table_name`), but the current Lambdas do not use it, so scans will typically be empty unless you add your own writers:
 
 ```bash
 TABLE_NAME=$(cd terraform && terraform output -raw dynamodb_table_name)
@@ -456,8 +463,26 @@ AWS-AI-Assitant/
 │   ├── lambda.tf                  # Lambda functions
 │   ├── lambda_packages.tf         # archive_file + dependency layer packaging
 │   ├── lambda/                    # Lambda handler source (Python)
-│   │   ├── doc_ingestor.py
-│   │   ├── query_processor.py
+│   │   ├── doc_ingestor/           # ingest Lambda package (handler: doc_ingestor.handler)
+│   │   │   ├── __init__.py
+│   │   │   ├── main.py
+│   │   │   ├── config.py
+│   │   │   ├── clients.py
+│   │   │   ├── document_io.py
+│   │   │   ├── bedrock_embed.py
+│   │   │   ├── opensearch_index.py
+│   │   │   └── logging_utils.py
+│   │   ├── query_processor/       # query Lambda package (handler: query_processor.handler)
+│   │   │   ├── __init__.py
+│   │   │   ├── main.py
+│   │   │   ├── config.py
+│   │   │   ├── clients.py
+│   │   │   ├── http_response.py
+│   │   │   ├── bedrock_embed.py
+│   │   │   ├── bedrock_generate.py
+│   │   │   ├── vector_search.py
+│   │   │   ├── opensearch_index.py
+│   │   │   └── logging_utils.py
 │   │   ├── layer_requirements.txt # Layer-only pip deps
 │   │   └── install_layer_deps.py  # pip install for layer (Terraform external data source)
 │   ├── opensearch.tf              # OpenSearch Serverless
@@ -473,7 +498,7 @@ AWS-AI-Assitant/
 │   │   └── index.html             # Frontend web interface
 │   └── js/
 │       └── app.js                 # Frontend JavaScript
-├── requirements.txt               # Python dependencies
+├── requirements.txt               # Optional local venv deps (boto3, opensearch-py, requests-aws4auth)
 └── README.md                      # This file
 ```
 
@@ -546,11 +571,11 @@ aws bedrock list-foundation-models --region us-east-1 --query 'modelSummaries[?c
 
 - **IAM Roles**: Lambda functions use least-privilege IAM roles with specific permissions for S3, OpenSearch, Bedrock, and DynamoDB access
 - **OpenSearch Security**: OpenSearch Serverless uses encryption policies and network policies to secure data at rest and in transit
-- **API Gateway**: HTTP API uses IAM authentication and CORS configuration (configurable via environment variables)
+- **API Gateway**: HTTP API enables CORS for browser calls; there is **no API authorizer** in the default Terraform stack—the `/ask` route is open to anyone who can reach the invoke URL. Restrict access (API keys, JWT, IAM authorizer, WAF, private integration, etc.) before production use.
 - **S3 Bucket**: S3 bucket has public access blocked and uses IAM-based access control
 - **Secrets Management**: No hardcoded credentials; all authentication uses IAM roles and AWS credentials
 - **Deployment packages**: Lambda handlers are zipped by Terraform (`archive_file`); shared dependencies ship in a Lambda layer built with `pip` during `terraform plan` / `apply`
-- **Network Security**: OpenSearch Serverless uses VPC endpoints and network policies for secure access
+- **Network**: OpenSearch Serverless uses encryption and data-access policies; the included network policy allows **public** access to the collection (`AllowFromPublic = true` in `terraform/opensearch.tf`). Tighten this if your compliance model requires private-only access.
 
 ### IAM Permissions Required
 

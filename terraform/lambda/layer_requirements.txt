@@ -1,2 +1,3 @@
 opensearch-py
 requests-aws4auth
+pypdf>=4.0,<7

@@ -68,6 +68,21 @@ output "query_processor_lambda_name" {
   value       = aws_lambda_function.query_processor.function_name
 }
 
+output "whitepaper_scheduler_lambda_arn" {
+  description = "ARN of the weekly whitepaper fetch Lambda"
+  value       = aws_lambda_function.whitepaper_scheduler.arn
+}
+
+output "whitepaper_scheduler_lambda_name" {
+  description = "Name of the weekly whitepaper fetch Lambda"
+  value       = aws_lambda_function.whitepaper_scheduler.function_name
+}
+
+output "whitepaper_scheduler_event_rule_name" {
+  description = "EventBridge rule (Sunday 00:00 UTC) that invokes whitepaper_scheduler"
+  value       = aws_cloudwatch_event_rule.whitepaper_scheduler_weekly.name
+}
+
 output "http_api_id" {
   description = "ID of the HTTP API"
   value       = aws_apigatewayv2_api.query_api.id

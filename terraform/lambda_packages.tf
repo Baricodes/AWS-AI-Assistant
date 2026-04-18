@@ -20,17 +20,37 @@ data "archive_file" "lambda_deps_layer_zip" {
 }
 
 data "archive_file" "doc_ingestor_zip" {
-  type             = "zip"
-  source_file      = "${path.module}/lambda/doc_ingestor.py"
-  output_path      = "${path.module}/.build/doc_ingestor.zip"
-  output_file_mode = "0644"
+  type        = "zip"
+  source_dir  = "${path.module}/lambda"
+  output_path = "${path.module}/.build/doc_ingestor.zip"
+  excludes = [
+    "query_processor",
+    "whitepaper_scheduler.py",
+    "layer_requirements.txt",
+    "install_layer_deps.py",
+    ".layer_content",
+    "**/__pycache__/**",
+  ]
 }
 
 data "archive_file" "query_processor_zip" {
-  type             = "zip"
-  source_file      = "${path.module}/lambda/query_processor.py"
-  output_path      = "${path.module}/.build/query_processor.zip"
-  output_file_mode = "0644"
+  type        = "zip"
+  source_dir  = "${path.module}/lambda"
+  output_path = "${path.module}/.build/query_processor.zip"
+  excludes = [
+    "doc_ingestor",
+    "whitepaper_scheduler.py",
+    "layer_requirements.txt",
+    "install_layer_deps.py",
+    ".layer_content",
+    "**/__pycache__/**",
+  ]
+}
+
+data "archive_file" "whitepaper_scheduler_zip" {
+  type        = "zip"
+  source_file = "${path.module}/lambda/whitepaper_scheduler.py"
+  output_path = "${path.module}/.build/whitepaper_scheduler.zip"
 }
 
 resource "aws_lambda_layer_version" "lambda_deps" {
