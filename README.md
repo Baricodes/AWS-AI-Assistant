@@ -125,16 +125,28 @@ terraform apply
 
 `terraform apply` rebuilds Lambda zips and the dependency layer when sources or `layer_requirements.txt` change. First deploy often takes on the order of **10–15 minutes**.
 
-### 4. Point the frontend at the API
+### 4. Trigger the scheduled whitepaper ingest once
+
+After deployment, you can invoke the whitepaper gathering Lambda immediately instead of waiting for the weekly EventBridge schedule:
 
 ```bash
+cd ..
+./scripts/trigger-whitepaper-scheduler.sh
+```
+
+The script invokes **`aws-ai-assistant-whitepaper-scheduler`** in **`us-east-1`** and writes the Lambda response to **`/tmp/whitepaper-scheduler-response.json`** by default.
+
+### 5. Point the frontend at the API
+
+```bash
+cd terraform
 API_URL=$(terraform output -raw http_api_ask_endpoint)
 cd ..
 mkdir -p frontend/config
 printf '%s\n' "window.APP_CONFIG = { apiEndpoint: \"$API_URL\" };" > frontend/config/config.js
 ```
 
-### 5. Ingest and query
+### 6. Ingest and query
 
 ```bash
 BUCKET_NAME=$(cd terraform && terraform output -raw s3_bucket_name)

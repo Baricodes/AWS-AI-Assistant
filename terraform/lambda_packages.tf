@@ -105,7 +105,7 @@ data "archive_file" "whitepaper_scheduler_zip" {
 resource "aws_lambda_layer_version" "lambda_deps" {
   layer_name               = "aws-ai-assistant-lambda-deps"
   filename                 = data.archive_file.lambda_deps_layer_zip.output_path
-  source_code_hash         = filebase64sha256(data.archive_file.lambda_deps_layer_zip.output_path)
+  source_code_hash         = data.archive_file.lambda_deps_layer_zip.output_base64sha256
   compatible_runtimes      = ["python3.11"]
   compatible_architectures = ["x86_64"]
 }
